@@ -297,3 +297,20 @@ carries no $/%/Nx). Neither affects correctness or any score.
 **Executer decisions (PM-reviewed, accepted):** added `config.value_prop_path()` — a lazy resolver (NOT a §9
 magic-value constant; mirrors `_resolve_allowlist_path`), needed because the Stage-1 LEAD3 test forbids the
 `value_prop.md` literal in app code; tightened `pitch_delivered` to exclude the OPENING disclosure. Both sound.
+
+### 2026-06-23 18:55 — Stage 3 handback + PM verification  *(PM-verified, not the executer's word)*
+**Built by:** cold executer (Executer builds, PM verifies). **Files:** `app/calendar_client.py` (`CalendarProvider`
+Protocol [`list_slots`/`create_event` unchanged] + `MockCalendar` offline default + lazy/gated `CalComCalendar` httpx
+client), `app/tools.py` (5 tools + `TOOL_REGISTRY` + import-time `assert keys == AGENT_TOOLS`), `tests/test_tools.py`,
+`tests/test_booking.py`; `tests/test_env.py` extended (ENV4 now covers tools/calendar_client). **No graded contract
+changed; no DECISION-NEEDED.**
+**PM verification (run, not inspected):** full suite **201 passed / 0 failed** (PM re-ran); ENV4 import-safe from an
+empty cwd; **httpx is genuinely lazy** (not loaded by importing `calendar_client`); **dispatch identity holds**
+(`TOOL_REGISTRY` keys == `AGENT_TOOLS`); `AGENT_TOOLS` + literals + `CalendarProvider` signature **intact**; PM read
+both modules — tz resolution (each slot carries `start_utc` + `start_lead_local`; bad tz degrades to the calendar tz,
+no crash), idempotent `create_event` (same lead+slot → same `event_id`), conflict → `slot_taken` (no overwrite/phantom),
+`log_disposition` phone **always masked** (no full E.164 in the record) — all real, not just claimed.
+**Decisions (PM-reviewed, accepted; none graded):** `SALES_CALENDAR_TZ = timezone.utc` (module-local OS-agnostic
+default; live event type carries its own tz); MockCalendar business-hours grid kept local to the mock (NOT promoted
+to §9 — mock-shaping, not governance). **Live note:** `CalComCalendar` idempotency relies on Cal.com's 409 (not
+self-dedup) — validate in Stage 8. **Resolves OQ-VOICE-3.** Committed on `main`.

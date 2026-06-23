@@ -156,13 +156,28 @@ class TestEnv4ImportSafety:
         except Exception as exc:
             pytest.fail(f"Importing Stage-1 modules raised: {exc}")
 
+    def test_stage3_modules_importable_singleton_none(self, monkeypatch):
+        """ENV4 (Stage 3): app.tools + app.calendar_client import side-effect free.
+
+        The live calendar singleton must be None at import (the live Cal.com
+        client is built lazily only via _get_calendar(), never eagerly — CON4).
+        """
+        for key in ["CALCOM_API_KEY", "CALCOM_EVENT_TYPE_ID",
+                    "VAPI_API_KEY", "OPENAI_API_KEY", "CONSENT_ALLOWLIST_PATH"]:
+            monkeypatch.delenv(key, raising=False)
+        import app.calendar_client as cc
+        import app.tools  # noqa: F401
+        cc.reset_calendar()
+        assert cc._calendar is None, "live calendar singleton must be None at import"
+
     def test_import_subprocess_no_env(self):
         """Run import in a clean subprocess with no .env — must exit 0."""
         result = subprocess.run(
             [sys.executable, "-c",
-             "import app.config, app.budget, app.consent; "
+             "import app.config, app.budget, app.consent, app.tools, app.calendar_client; "
              "import app.budget as b; b.reset_ledger(); assert b._ledger is None; "
-             "import app.consent as c; c.reset_allowlist(); assert c._allowlist is None"],
+             "import app.consent as c; c.reset_allowlist(); assert c._allowlist is None; "
+             "import app.calendar_client as cal; cal.reset_calendar(); assert cal._calendar is None"],
             capture_output=True,
             text=True,
             cwd=str(REPO_ROOT),

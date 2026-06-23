@@ -41,7 +41,7 @@ Status values: ⬜ Not started · 🔄 In progress · 🟡 Awaiting verification
 | 0 | Project setup & spine | meta (this file set) | — | ✅ Complete (green-lit 2026-06-23 16:57) |
 | 1 | Environment, secrets, budget & synthetic inputs | `ENV1`–`ENV4`, `SEC1`–`SEC4`, `LEAD1`–`LEAD3` | ✅ | ✅ Complete (2026-06-23, 105 green; offline scope — `LIVE0` Asaf-parallel) |
 | 2 | Conversation design (persona, dialog policy, literals) | `CONV1`–`CONV6` | ✅ | ✅ Complete (2026-06-23, 150 green; winner **B** provisional pending Stage-6 re-run) |
-| 3 | Agent callable functions + booking | `TOOL1`–`TOOL5`, `BOOK1`–`BOOK3` | ✅ | ⬜ Not started |
+| 3 | Agent callable functions + booking | `TOOL1`–`TOOL5`, `BOOK1`–`BOOK3` | ✅ | ✅ Complete (2026-06-23, 201 green; OQ-VOICE-3 resolved) |
 | 4 | Voice-platform integration (Vapi + Realtime + webhooks) | `VOICE1`–`VOICE5`, `CON2`–`CON3` | ✅ | ⬜ Not started |
 | 5 | Outbound orchestration + consent + budget guard | `CALL1`–`CALL4`, `CON1`, `CON4`, `CON5`, `SEC3` | ✅ | ⬜ Not started |
 | 6 | Offline evaluation harness | `EVAL1`–`EVAL6` | — | ⬜ Not started |
@@ -147,7 +147,10 @@ deterministic local mock — `OQ-VOICE-3` locked**; the mock is the test default
 **Definition of Done (QA: `TOOL1`–`TOOL5`, `BOOK1`–`BOOK3`):**
 - [ ] `TOOL1`–`TOOL5` — availability/booking/disposition/voicemail/end-call deterministic; idempotent `book_meeting`; dispatch identity assert; no secret/full-number in dispositions. **`check_availability` resolves the lead's `timezone` against the sales calendar's tz** (Red-Team 2026-06-23, Finding 6 — a "3pm in the wrong tz" live booking is a demo failure).
 - [ ] `BOOK1`–`BOOK3` — free-slot listing **with explicit timezone resolution**; event creation returns a real id; conflict → re-offer, no phantom booking (Policy 5). Backend is the **Cal.com slot-booking contract** behind `CalendarProvider`; the **local mock** (not Google OAuth) is the offline default; the live Cal.com client is gated like other live paths.
-**Status:** ⬜ Not started · **Reviewer gate:** ✅ (tool signatures + calendar interface). Resolves `OQ-VOICE-3` (Cal.com + mock).
+**Status:** ✅ Complete (offline; PM-verified 2026-06-23 — **201 green**; 5 tools + `CalendarProvider` [Cal.com
+gated + local mock default]; tz resolution, idempotent booking, masked dispositions, dispatch-identity assert,
+lazy httpx all verified; no graded contract changed). · **Reviewer gate:** ✅ (PM inline; `AGENT_TOOLS` +
+interface intact). **Resolves `OQ-VOICE-3`** (Cal.com + mock).
 
 ---
 
@@ -246,12 +249,11 @@ Do not mark a stage complete if its QA checks were only drafted but not run.
 ---
 
 ## Current project state
-- **Status:** **Stage 0 ✅ · Stage 1 ✅ · Stage 2 ✅ (all offline, PM-verified).** Stage 1 (committed
-  `v1.0.0-stage1`) recovered from the prior crash + finding-F1 resolved. **Stage 2** built by a cold executer
-  ("Executer builds, PM scores"): A/B persona competition, **150 tests green**, bake-off **computed +
-  PM-reproduced**; the four mandated criteria **tie**, **provisional winner B (Direct)** on the efficiency
-  tiebreak — **non-decisive until Stage-6 enriches the callee + re-runs the bake-off**. Stage-2 work is
-  **staged, not yet committed**. `LIVE0` provisioning owned by Asaf in parallel (not a code gate).
+- **Status:** **Stages 0–3 ✅ (all offline, PM-verified & committed).** Running the **autonomous loop** (commit +
+  auto-advance per stage; halt only on the 3 triggers + Stage 8/9 coordination). Commits: `05cfee4` (spine) ·
+  `1bef4e7` (`v1.0.0-stage1`) · `f867207` (Stage 2 A/B) · Stage 3 (tools + booking; OQ-VOICE-3 resolved). **201
+  tests green.** **Carry-forward:** Stage-6 must enrich `simulated_callee` + re-run the A/B (winner **B** is
+  provisional) and clear 2 minor eval findings. `LIVE0` provisioning owned by Asaf (not a code gate).
 - **Decisions locked:** service-only repo (no notebook); Vapi (Retell-swappable); OpenAI Realtime brain;
   lean live calling under a hard $50 cap; secrets+PII+fabricated-outcomes are the anti-leakage core;
   **operating model — `general-purpose` executers + native `/code-review` & `/security-review` gates;
@@ -259,7 +261,7 @@ Do not mark a stage complete if its QA checks were only drafted but not run.
 - **Open questions:** all four **✅ resolved 2026-06-23** (NOTES) — `OQ-VOICE-1` `REALTIME_MODEL =
   "gpt-4o-realtime-preview"`; `OQ-VOICE-2` **Vapi** primary + mandatory adapter (Retell-ready);
   `OQ-VOICE-3` **Cal.com API** + deterministic local mock; `OQ-VOICE-4` **3** consented tester numbers.
-- **Next action:** (1) Asaf: commit the Stage-2 baseline. (2) Then **Stage 3 — agent callable functions +
-  booking** (`TOOL1`–`TOOL5`, `BOOK1`–`BOOK3`; Cal.com behind `CalendarProvider` + local mock). (3) Carry
-  forward the **Stage-6 obligation** to enrich `simulated_callee` + re-run the bake-off before locking the
-  persona winner for live, plus the 2 minor eval findings. Do not hard-lock variant B before the Stage-6 re-run.
+- **Next action:** **Stage 4 — Voice-platform integration** (Vapi adapter + OpenAI Realtime assistant config with
+  `DISCLOSURE_LINE` as the static first-message + signature-verified FastAPI webhooks; `VOICE1`–`VOICE5`,
+  `CON2`–`CON3`) under the autonomous loop; PM verifies + `/code-review` gate, then auto-advances. The public-tunnel
+  signed-webhook smoke test coordinates with Asaf's `LIVE0` track. Carry the Stage-6 obligations forward.

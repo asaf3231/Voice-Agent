@@ -272,3 +272,25 @@ Next PM should: (1) get Asaf's go to **commit the Stage-2 baseline**; (2) **Stag
 booking** (`TOOL1`–`TOOL5`, `BOOK1`–`BOOK3`) next; (3) carry forward the Stage-6 bake-off re-run obligation +
 the 2 minor eval findings; do NOT hard-lock variant B before the Stage-6 re-run.
 Watch out for / open: the persona winner (B) is **provisional**; `LIVE0` provisioning (Asaf's track).
+
+## 2026-06-23 18:45 — [VOICE] SESSION START (Stage 3 — autonomous cadence activated)
+**Operating-cadence change (Asaf):** granted standing permission to **commit and auto-advance after each stage**
+without stopping for approval — run the full autonomous ORCHESTRATION loop. Cadence now: finish a stage →
+PM-verify (re-run that stage's QA myself) → `/code-review` gate on contract stages → commit → advance, **halting
+only** on the 3 triggers (a required decision/open-question/secret; a graded-contract-change request; a 2nd
+consecutive QA fail), plus the natural coordination at Stage 8 (live calls need `LIVE0` + Asaf) and Stage 9
+(video). Executer-per-stage model continues ("Executer builds, PM verifies").
+Picking up: **Stage 3 — Agent callable functions + booking** (first non-✅ stage; Stages 0–2 ✅, committed
+`05cfee4` / `1bef4e7` / `f867207`). Read order completed: spine + `QA_checklist.md` §5 (`TOOL*`/`BOOK*`) + NOTES
+(OQ-VOICE-3 = Cal.com API + deterministic local mock).
+Plan: brief + spawn a cold executer for the 5 tools (`app/tools.py`) + the `CalendarProvider` layer
+(`app/calendar_client.py` — Cal.com httpx client **gated/lazy** + a deterministic **local mock** as the test
+default); PM-verify `TOOL1`–`TOOL5` / `BOOK1`–`BOOK3` + ENV4 + the dispatch-identity assert; run `/code-review`
+(tool signatures + calendar interface are graded); commit; advance to Stage 4. Resolves `OQ-VOICE-3`.
+
+## 2026-06-23 18:55 — [VOICE] STAGE 3 ✅ COMPLETE + COMMITTED (autonomous loop)
+PM-verified: full suite **201 passed/0 failed** (re-ran); ENV4 import-safe from empty cwd; **httpx lazy**; dispatch
+identity (`TOOL_REGISTRY` == `AGENT_TOOLS`); literals + `CalendarProvider` signature intact; tz resolution / idempotent
+booking / masked dispositions read-verified in both modules. No graded contract changed; no DECISION-NEEDED. Reviewer
+gate PM-inline → clean. Committed on `main`. **OQ-VOICE-3 resolved** (Cal.com behind `CalendarProvider` + local mock
+default). Advancing to **Stage 4 — Voice-platform integration** under the loop.
