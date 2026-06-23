@@ -1,0 +1,39 @@
+{
+  "_comment": "SYNTHETIC ICP qualification criteria (CLAUDE.md §4/LEAD2). Loaded at runtime; never hardcoded in app/ or prompts.",
+  "icp": {
+    "name": "Alta Ideal Customer Profile v1 (synthetic)",
+    "description": "B2B SaaS companies with an active sales motion that want to scale outbound without proportionally growing headcount.",
+    "required_tags": ["b2b-saas"],
+    "preferred_tags": ["series-a", "series-b", "series-c", "growth-stage"],
+    "disqualifying_tags": [],
+    "company_size_employees": {
+      "min": 10,
+      "max": 1000
+    },
+    "target_roles": [
+      "VP of Sales",
+      "Head of Sales",
+      "CRO",
+      "Chief Revenue Officer",
+      "Director of Sales",
+      "Head of Revenue Operations",
+      "VP Revenue"
+    ],
+    "pain_signals": [
+      "manual outreach at scale",
+      "inconsistent follow-up",
+      "SDR ramp time too long",
+      "low connect rates on cold outbound",
+      "need to expand pipeline without headcount"
+    ],
+    "qualification_criteria": {
+      "minimum_score": 2,
+      "scoring": {
+        "has_required_tag": 2,
+        "has_preferred_tag": 1,
+        "role_match": 2,
+        "size_in_range": 1
+      }
+    }
+  }
+}

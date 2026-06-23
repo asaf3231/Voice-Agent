@@ -1,0 +1,9 @@
+{
+  "_comment": "EXAMPLE allowlist — copy to consent_allowlist.json and replace with real consented test numbers. The real file is gitignored (CLAUDE.md §5 Policy 2 / CON1). Only numbers on this list may be dialed.",
+  "_format": "E.164 strings only (e.g. '+15551234567'). List must be non-empty to be valid.",
+  "allowed_numbers": [
+    "+15550000001",
+    "+15550000002",
+    "+15550000003"
+  ]
+}

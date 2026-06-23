@@ -370,6 +370,7 @@ HARD_BUDGET_USD        = 50.00     # absolute ceiling (the provided card limit)
 LIVE_CALL_BUDGET_USD   = 15.00     # soft reserve for live calls (lean posture)
 MAX_COST_PER_CALL_USD  = 1.00      # per-call projected-cost ceiling
 MAX_LIVE_CALLS         = 6         # lean live eval-set ceiling
+BUDGET_ALARM_ROUNDING_MARGIN = Decimal("0.01")  # post-hoc over-cap alarm tolerance in record_cost (F1 2026-06-23; the pre-call gate budget_permits is exact and does NOT use this)
 
 # --- call governance ---
 MAX_CALL_DURATION_S    = 300       # hard per-call wall-clock

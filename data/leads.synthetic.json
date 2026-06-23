@@ -1,0 +1,65 @@
+{
+  "_comment": "SYNTHETIC data only — no real PII (CLAUDE.md §4/§5 LEAK2). Required fields: lead_id, first_name, company, phone_e164.",
+  "leads": [
+    {
+      "lead_id": "lead-001",
+      "first_name": "Jordan",
+      "last_name": "Rivera",
+      "company": "Momentum SaaS Inc.",
+      "phone_e164": "+15550100001",
+      "role": "VP of Sales",
+      "icp_tags": ["b2b-saas", "series-b", "50-200-employees"],
+      "timezone": "America/New_York",
+      "do_not_call": false,
+      "notes": "Attended SaaStr 2025; interested in AI-assisted sales tools."
+    },
+    {
+      "lead_id": "lead-002",
+      "first_name": "Alex",
+      "last_name": "Chen",
+      "company": "CloudScale Solutions",
+      "phone_e164": "+15550100002",
+      "role": "Head of Revenue Operations",
+      "icp_tags": ["b2b-saas", "series-a", "20-50-employees"],
+      "timezone": "America/Los_Angeles",
+      "do_not_call": false,
+      "notes": "Currently using manual outreach; pain around follow-up consistency."
+    },
+    {
+      "lead_id": "lead-003",
+      "first_name": "Morgan",
+      "last_name": "Patel",
+      "company": "Nexus CRM",
+      "phone_e164": "+15550100003",
+      "role": "CRO",
+      "icp_tags": ["b2b-saas", "growth-stage", "200-500-employees"],
+      "timezone": "America/Chicago",
+      "do_not_call": false,
+      "notes": "Evaluating outbound automation vendors Q3."
+    },
+    {
+      "lead_id": "lead-004",
+      "first_name": "Taylor",
+      "last_name": "Nguyen",
+      "company": "Optimus Tech",
+      "phone_e164": "+15550100004",
+      "role": "Director of Sales",
+      "icp_tags": ["b2b-saas", "bootstrap", "10-20-employees"],
+      "timezone": "America/Denver",
+      "do_not_call": true,
+      "notes": "Opted out 2026-06-01 — do not contact."
+    },
+    {
+      "lead_id": "lead-005",
+      "first_name": "Sam",
+      "last_name": "Wallace",
+      "company": "Prism Analytics",
+      "phone_e164": "+15550100005",
+      "role": "VP Marketing",
+      "icp_tags": ["b2b-saas", "series-c", "500-1000-employees"],
+      "timezone": "Europe/London",
+      "do_not_call": false,
+      "notes": "EMEA expansion underway; open to US-based meeting."
+    }
+  ]
+}

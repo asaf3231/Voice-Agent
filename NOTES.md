@@ -162,6 +162,17 @@ do the signups — so it runs in parallel, not in series, from day 1.
 **Impact:** PM pre-flight done this session — `git init` + a CLEAN secret gate. Stage 1 starts now. A 4th+
 live number or any graded-contract change still halts to Asaf.
 
+### 2026-06-23 — F1 resolved: budget alarm rounding-margin promoted to a §9 constant  *(Asaf — option a)*
+**Decision:** The post-hoc over-cap alarm tolerance in `budget.record_cost` (formerly an inline
+`_to_decimal(0.01)` literal flagged by the Stage-1 reviewer gate) is promoted to a **§9-controlled
+constant** — `BUDGET_ALARM_ROUNDING_MARGIN = Decimal("0.01")` in `app/config.py`, mirrored in `CLAUDE.md`
+§9 and the named-constants table below. `budget.py` consumes it via the same lazy `field(default_factory=…)`
+pattern as the other caps (the `alarm_margin` ledger field) — governed + injectable, not inlined.
+**Reason:** Asaf chose option (a): no inline magic values / floating tolerances; `Decimal` keeps the
+arithmetic exact. This is the reviewer-flagged graded-contract change, now authorized and applied.
+**Impact:** No behavior change (margin stays $0.01); the pre-call gate (`budget_permits`) remains exact and
+does not use this margin. Suite re-verified **107 green**. The only §9 constant added post-genesis.
+
 ---
 
 ## Named constants (single source of truth — mirrored in `app/config.py`)
@@ -172,6 +183,7 @@ live number or any graded-contract change still halts to Asaf.
 | `LIVE_CALL_BUDGET_USD` | `15.00` | Soft reserve for live calls (lean posture) |
 | `MAX_COST_PER_CALL_USD` | `1.00` | Per-call projected-cost ceiling; abort beyond |
 | `MAX_LIVE_CALLS` | `6` | Lean live eval-set ceiling |
+| `BUDGET_ALARM_ROUNDING_MARGIN` | `Decimal("0.01")` | Post-hoc over-cap alarm tolerance in `record_cost` (not the pre-call gate, which is exact); F1 2026-06-23 |
 | `MAX_CALL_DURATION_S` | `300` | Hard per-call wall-clock (5 min) |
 | `MAX_AGENT_TURNS` | `40` | Anti-loop cap on conversation turns |
 | `DAILY_CALL_CAP` | `25` | Outbound throttle per day |
@@ -216,7 +228,33 @@ live number or any graded-contract change still halts to Asaf.
   `WEBHOOK_SECRET=`) over the candidate set returned **zero hits**. Full `SEC1`/`LEAK1` re-runs at Stage 1/7
   against the real `.env.example` + `app/` tree.
 
+- **2026-06-23 17:45 — Stage 1 verified (PM-run against live code, post-recovery):**
+  - **Stage-1 suite: 105 passed, 0 failed** (`pytest tests/`, offline, venv CPython 3.13.2 / pytest 9.1.1).
+  - **Byte-exact literals == CLAUDE.md §9** (verified programmatically, not against the test): `DISCLOSURE_LINE`
+    pure ASCII; `FAILSAFE_HANGUP_LINE` non-ASCII = only em-dash U+2014. The crash-introduced curly apostrophe
+    (U+2019) was eliminated; a smart-quote regression guard now prevents recurrence.
+  - **ENV4 import-safe from an empty cwd** (`/private/tmp`): `app.config`/`budget`/`consent` import with both
+    lazy singletons `None`; no `.env`/client/network at import.
+  - **SEC1 scans the git-true tracked set (27 files), 0 secret hits.** `git check-ignore` confirms `.env`,
+    `Home_Assignment_email.md`, `REFERENCE/`, real `consent_allowlist.json`, `briefs/`, `handbacks/`,
+    `.claude/settings.local.json` are IGNORED; `.env.example` + `consent_allowlist.example.json` trackable.
+
 ---
 
 ## Stage handbacks
 *(appended by the executer per stage; the PM verifies independently before honoring)*
+
+### 2026-06-23 17:45 — Stage 1 handback (PM-led crash recovery)  *(PM-verified, not the executer's word)*
+**Context:** the original Stage-1 executer crashed (Anthropic 500) after writing code but before any
+handback/commit. This session audited every on-disk artifact, fixed defects, hardened the graded checks,
+and re-ran QA. No fresh executer spawned (surgical fixes — budget rule). Full handback: `handbacks/stage-1.md`.
+**Fixed/added:** byte-exact `FAILSAFE_HANGUP_LINE` (curly U+2019 → straight U+0027, conforming to the locked
+CLAUDE.md §9 literal — a conformance fix, *not* a contract change); brief-mandated lazy `load_env()`; replaced
+a no-op LEAD3 test with a real one; strengthened `SEC1` to the git-true tracked set; added an AST-based `ENV2`
+cross-check, a smart-quote regression guard, and `load_env` coverage; deleted scratch `run_tests.sh`.
+**QA (run, not inspected):** **105 passed / 0 failed** (see Verified facts 17:45). Reviewer gate (PM-inline):
+3 LOW findings, none blocking.
+**Open for Asaf — finding F1:** `app/budget.py` `record_cost` uses an inline magic `0.01` rounding margin
+(§8 "no magic values inline"); it tolerates ~1¢ silent overspend on the *post-hoc* alarm (the real gate is
+`budget_permits`, pre-call). Naming it as a config constant touches the §9-controlled set, so it is **held**
+for your decision: (a) name it in `config.py`, or (b) accept as-is.

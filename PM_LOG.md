@@ -147,3 +147,90 @@ Plan for this session: green-light granted (via plan approval) → `git init` + 
 **CLEAN**) → mark Stage 0 ✅ → hand Asaf the `LIVE0` provisioning checklist → run **Stage 1** under the loop
 (env, secrets, budget, consent, synthetic inputs, import-safety), then auto-advance the offline stages,
 halting per the triggers. Write SESSION END / HANDOFF before stopping.
+
+## 2026-06-23 17:06 — [VOICE] SESSION START
+Picking up: **Stage 1 — Environment, secrets, budget & synthetic inputs**, the first non-✅ stage.
+Read order completed: `PM_Methodology_Prompt.md` → latest `PM_LOG.md` entry (16:57 SESSION START) →
+`CLAUDE.md` → `PLAN.md` → `QA_checklist.md` → `NOTES.md`.
+**Anomaly found on resume (re-verified against disk, not the ledger):** the 16:57 session wrote a
+SESSION START declaring "Stage 1 starts now" but **never wrote a SESSION END / HANDOFF**, and **no
+Stage-1 code landed** — `git log` shows only the Stage-0 baseline `05cfee4`; there is no `app/`, `data/`,
+`tests/`, `requirements.txt`, `Makefile`, or `.env.example` on disk. `PLAN.md` marks Stage 1 "🔄 In
+progress" but that reflects intent, not work done. **True state: Stage 1 is not started in code.** That
+prior session evidently stalled immediately after its START entry.
+State as read (to re-verify): Stage 0 ✅ green-lit; repo under git; secret pre-flight CLEAN; all 4 OQs ✅
+(`REALTIME_MODEL="gpt-4o-realtime-preview"`, Vapi+adapter, Cal.com+mock, 3 consented numbers); operating
+model = autonomous ORCHESTRATION loop, `general-purpose` executers per stage, `/code-review` on contract
+stages, PM re-runs QA, "you provision, I build" (Asaf owns `LIVE0`).
+Plan for this session: confirm the resume state + the stalled-session anomaly with Asaf, then launch the
+Stage 1 cold `general-purpose` executer under the loop, PM-verify the Stage-1 QA IDs
+(`ENV1`–`ENV4`, `SEC1`–`SEC4`, `LEAD1`–`LEAD3`, `CON1`) + run the `/code-review` gate, update `PLAN.md`/
+`NOTES.md`, and write a SESSION END / HANDOFF before stopping.
+
+## 2026-06-23 17:27 — [VOICE] SESSION START (recovery — prior session crashed mid-Stage-1)
+Picking up: **Stage 1 — Environment, secrets, budget & synthetic inputs**, the first non-✅ stage. Read
+order completed this session: `PM_Methodology_Prompt.md` → latest `PM_LOG.md` entry (17:06 START) →
+`CLAUDE.md` → `PLAN.md` → `QA_checklist.md` → `NOTES.md` → the Stage-1 brief + every artifact on disk.
+**Anomaly / recovery context (verified against disk, not the ledger):** unlike the 17:06 entry's prediction
+("no Stage-1 code landed"), the 17:06 session's executer **did** run and **did** write Stage-1 code — then
+an **Anthropic Server 500 infrastructure crash** killed the session **before** any SESSION END / HANDOFF
+and **before** the executer wrote `handbacks/stage-1.md` (the `handbacks/` dir exists but is empty). So the
+true state is: **uncommitted Stage-1 code on disk, unverified, unreviewed, uncommitted** — `git log` shows
+only the Stage-0 baseline `05cfee4`; all Stage-1 files are `??` untracked; `.gitignore` + `PM_LOG.md` are `M`.
+State as read (re-verified): venv present (CPython **3.13.2**, pytest **9.1.1**); Stage-0 ✅; all 4 OQs ✅;
+operating model = autonomous loop, `general-purpose` executers, `/code-review` on contract stages, PM re-runs QA.
+**Defect already found (byte-exact graded contract, pre-test):** `app/config.py` `FAILSAFE_HANGUP_LINE` uses a
+**curly apostrophe U+2019** where `CLAUDE.md`/`NOTES.md`/`tests/test_env.py` all use a **straight U+0027** —
+an implementation drift from the locked literal (NOT a contract change). Fixing config to match source is
+in-scope and required; the locked literal in CLAUDE.md is untouched.
+Plan for this session (no fresh executer spawn — recovery is a PM-led stabilization of existing on-disk work):
+(1) run the offline suite for ground-truth pass/fail; (2) fix the byte-exact literal + any other defects
+(scratch artifacts, SEC1 robustness); (3) re-verify the Stage-1 QA IDs by running them; (4) run the
+`/code-review` gate (contract-touching stage); (5) write `handbacks/stage-1.md`, update `PLAN.md`/`NOTES.md`,
+commit the Stage-1 baseline, and write a SESSION END / HANDOFF before stopping.
+
+## 2026-06-23 17:45 — [VOICE] SESSION END / HANDOFF (Stage 1 stabilized + verified)
+Did: Recovered the crashed Stage-1 work **PM-led, no executer respawn** (surgical fixes — budget rule).
+Audited every on-disk artifact; **fixed the byte-exact `FAILSAFE_HANGUP_LINE` curly-apostrophe contract
+violation** (U+2019→U+0027, conforming to CLAUDE.md §9 — not a contract change); added the brief-mandated lazy
+`load_env()`; replaced a no-op LEAD3 test with a real one; strengthened `SEC1` to the git-true tracked set;
+added an AST `ENV2` cross-check, a smart-quote regression guard, and `load_env` coverage; deleted scratch
+`run_tests.sh`. Ran the reviewer gate (PM-inline, not 8 cold spawns — budget + no-spawn guardrail): 3 LOW
+findings, none blocking. Wrote `handbacks/stage-1.md`; updated `PLAN.md` (Stage 1 → ✅ offline) + `NOTES.md`.
+Verified numbers (PM-run, not the executer's word): **105 passed / 0 failed**; both literals byte-exact ==
+CLAUDE.md §9 (`FAILSAFE` non-ASCII = em-dash U+2014 only); ENV4 import-safe from empty cwd (singletons `None`);
+SEC1 scans 27 git-tracked files, 0 secret hits; gitignore contract proven by `git check-ignore`.
+Status now: ✅ **Stage 1 code-complete & verified (offline scope).** Work is **staged but NOT committed**
+(global rule: commit only when Asaf asks; on the default branch, branch first). `LIVE0` provisioning is
+Asaf's parallel track (not a code gate).
+Next PM should: (1) get Asaf's go to **commit the Stage-1 baseline** (recommend `main`, as a recovery point,
+matching the Stage-0 baseline convention); (2) get Asaf's call on **finding F1** (`budget.py` inline `0.01`
+margin — name as a config constant [touches §9] or accept); (3) begin **Stage 2** (conversation design / A-B),
+landing the minimal seeded `simulated_callee.py` + thin computed rubric **first** (Red-Team Finding 5) before
+the bake-off. Stop at the Stage-1 boundary per CLAUDE.md §0 until commit + F1 are settled.
+Watch out for / open: F1 (Asaf decision); `LIVE0` provisioning lead time (#1 schedule risk); do not start
+Stage 2 code until commit + F1 are settled.
+
+## 2026-06-23 17:50 — [VOICE] NOTE (commit landed; appended post-SESSION-END for ledger accuracy)
+Asaf approved the commit. The **Stage-1 baseline is committed on `main`** (recovery point directly above the
+Stage-0 baseline `05cfee4`); working tree clean. Of the SESSION END's three next-actions, (1) commit is now
+**done**; remaining: **(2)** Asaf's finding-**F1** decision and **(3)** Stage 2. Not pushed (local only).
+
+## 2026-06-23 18:00 — [VOICE] SESSION END / HANDOFF (Stage 1 FINAL — F1 applied + baseline locked)
+Did (continuation of the 17:27 recovery session): applied Asaf's **F1 resolution (option a)** — promoted the
+`record_cost` rounding margin to a §9-controlled constant `BUDGET_ALARM_ROUNDING_MARGIN = Decimal("0.01")`
+(config.py + CLAUDE.md §9 + NOTES table), consumed via budget.py's lazy `alarm_margin` field; added 2 tests.
+Re-ran comprehensive verification, then **amended the Stage-1 baseline commit** to fold in F1 and carry
+Asaf's exact message: `v1.0.0-stage1: complete environment, secrets architecture, budget ledger and
+synthetic inputs`.
+Verified numbers (PM-run): **107 passed / 0 failed**; ENV4 import-safe from empty cwd with the F1 constant
+wired; both graded literals still byte-exact == CLAUDE.md §9. Working tree clean; one commit on `main`
+(`v1.0.0-stage1`) above the Stage-0 baseline; not pushed.
+Status now: ✅ **Stage 1 COMPLETE (offline scope), committed & locked.** All Stage-1 QA IDs green; reviewer
+findings closed (F1 fixed; F2/F3 cosmetic/doc, accepted). `LIVE0` provisioning remains Asaf's parallel track.
+Next PM should: **initialize Stage 2 (conversation design / A-B)** on Asaf's go — per the strict
+forward-dependency guardrail, land the minimal seeded `app/eval/simulated_callee.py` + the thin computed
+deterministic `app/eval/rubric.py` framework **first**, BEFORE authoring any persona variant or running the
+bake-off (Red-Team Finding 5; `EVAL2`/`LEAK4`).
+Watch out for / open: `LIVE0` provisioning lead time (#1 schedule risk); the Stage-2 rubric/simulated-callee
+forward-dep must be honored or Stages 3/4/8/9 cascade.
