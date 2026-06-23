@@ -310,6 +310,19 @@ PM's own eyes) before the stage is marked ✅/committed** — the inline shortcu
     singletons `None`; `TOOL_REGISTRY` == `AGENT_TOOLS`; the 5 tool signatures unchanged (only `dispatch`'s internal
     injection changed).
 
+- **2026-06-23 ~19:55 — Stage 5 verified (PM-run against live code) + first INDEPENDENT reviewer gate:**
+  - **Full suite: 287 passed / 0 failed** (251 + 36 new). Deterministic.
+  - **ENV4 import-safe across all 8 modules** from an empty cwd (now incl. `app.orchestrate`): budget + consent lazy
+    singletons `None`; httpx not pulled.
+  - **Chokepoint integrity (the graded core):** the independent reviewer traced every branch — **no path reaches
+    `place_call` without `consent_allows()` then `budget_permits()`**, in BOTH `orchestrate.py` (consent in `run()` →
+    budget at the top of every `_dial_one` retry attempt) AND `scripts/place_demo_call.py` (consent → budget → dial,
+    all in `main()`). Provider-spy tests prove `place_call` is unreached when either gate fails.
+  - **No graded-contract module touched** (`git status` clean for config/consent/budget/tools/vapi_client/
+    calendar_client/persona/server); the new `PROJECTED_COST_PER_CALL` is a local module constant (not §9).
+  - **Independent reviewer verdict: APPROVE**; 2 MINOR findings, **both PM-fixed before commit** (a §8 dead import +
+    a trivially-passing `test_budget_guard_runs_before_each_retry` — rewritten to genuinely prove the retry guard).
+
 ---
 
 ## Stage handbacks
@@ -408,3 +421,30 @@ names-==-`AGENT_TOOLS` assert; `build_system_prompt` default variant "B" (provis
 **Deviations:** none on offline scope — the public-HTTPS-tunnel signed end-to-end webhook smoke test was deliberately
 **not** attempted (live/gated, coordinated with `LIVE0`/Stage 8). **Carry-forward (unchanged):** Stage-6 must enrich
 `simulated_callee` + re-run the A/B before locking the persona for live. Committed on `main`.
+
+### 2026-06-23 ~19:55 — Stage 5 handback + PM verification + first independent reviewer gate  *(PM-verified)*
+**Built by:** one cold `general-purpose` executer (Sonnet), brief `briefs/stage-5.md`. **Files:** `app/orchestrate.py`
+(new — campaign runner + promoted `load_leads`/`load_icp`), `scripts/place_demo_call.py` (new — gated second entry
+point), `tests/test_orchestrate.py` (new, 36 tests); modified `tests/test_leads.py` (imports the promoted loader, no
+duplication), `tests/test_env.py` (ENV4 → 8 modules), `Makefile` (`call` target wired to the script).
+**Design (PM-read + reviewer-traced):** `run()` order per lead = DNC suppress (CON5) → `consent_allows` (CON1) →
+daily-cap defer (CALL3) → `_dial_one`; `_dial_one` runs `ledger.budget_permits` at the top of EVERY retry attempt
+(CALL4/SEC3) before `place_call`, retries only on `no_answer` up to `CALL_RETRY_MAX`, records actual cost after a
+placed call, and surfaces every error/exception as a structured `CallDisposition` (CALL1, never raises). Over-budget →
+`budget_halted` + clean campaign halt. `place_demo_call.py` mirrors the gates inside `main()` (import-safe).
+**PM verification (run, not inspected):** 287 passed/0 failed; ENV4 import-safe across 8 modules; Stage-5 classes
+(test_orchestrate + test_leads) 58 passed; **no graded-contract module changed**.
+**Reviewer gate — the corrected process (FIRST genuinely independent pass, not PM-inline):** a cold read-only reviewer
+(general-purpose, Sonnet) traced the chokepoint in both entry points (no bypass), checked CALL1–4/CON1/4/5/SEC3/ENV4 +
+graded-contract integrity + test honesty. **Verdict: APPROVE.** 2 MINOR (non-blocking) findings, **both PM-fixed before
+commit:** (1) `orchestrate.py` dead imports `budget_permits`/`record_cost` (only instance methods are used) — §8 clean
+tree; (2) `test_budget_guard_runs_before_each_retry` passed trivially (budget failed on attempt 1, never exercising the
+retry guard) — rewritten so attempt 1 is permitted + returns `no_answer`, its recorded cost exhausts the budget, and the
+RETRY is blocked → asserts exactly one dial + `budget_halted` (now a real regression catcher). Re-ran: 287 green.
+**Decisions (PM-reviewed, accepted; none graded):** `PROJECTED_COST_PER_CALL = MAX_COST_PER_CALL_USD` (local module
+constant, conservative pre-dial estimate); `run()` accepts injected `ledger=`/`allowlist=` for test isolation (falls
+back to the singletons); governance-level disposition statuses (`suppressed`/`consent_refused`/`budget_halted`/
+`daily_cap_deferred`/`placed`) are a runner-local superset and do NOT change `tools.VALID_DISPOSITIONS`.
+**Known limitation (carry to Stage 8):** `place_demo_call.py` uses a fresh in-process `BudgetLedger` per invocation —
+cumulative live spend across separate `make call` runs is reconciled via **receipts** (SEC5/LIVE3), not in-memory (an
+in-memory ledger resets each process regardless). **Deviations:** none. **DECISION-NEEDED:** none.

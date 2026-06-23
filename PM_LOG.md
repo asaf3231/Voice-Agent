@@ -381,3 +381,19 @@ this time. On Asaf's "run the loop"/"continue", proceed.
 Watch out for / open: Stage-6 must close the 3 minor eval findings + the `simulated_callee` enrichment / A/B re-run
 (winner **B** provisional); Stage-4 public-tunnel live webhook smoke owed at Stage 8; recurring mid-stage crashes —
 re-verify disk vs ledger on resume; `LIVE0` is Asaf's parallel track + #1 schedule risk.
+
+## 2026-06-23 19:37 — [VOICE] SESSION START (Asaf: "run the loop" — Stage 5 under the corrected gate)
+Picking up: **Stage 5 — Outbound orchestration + consent + budget guard** (first non-✅ stage; Stages 0–4 ✅, commits
+through `85b2a4b`; 251 green). Asaf re-activated the autonomous ORCHESTRATION loop ("run the loop") **with the corrected
+process from the Stage-4 lesson: a genuinely INDEPENDENT reviewer pass on contract-touching stages, not the PM's own
+inline eyes** (NOTES 2026-06-23 "Stage 4 post-commit fix").
+Recon done (so the brief is tight + correct): `app/orchestrate.py` does not exist; `scripts/` is empty (so
+`scripts/place_demo_call.py` must be created for the `SEC3`/`CON1` second-entry-point spy); **no production leads loader
+exists** — `load_leads`/`load_icp` live ONLY as helpers in `tests/test_leads.py` (must be promoted to the app so the
+runtime path is real + validated, LEAD1/LEAK3). Public APIs confirmed: `consent.consent_allows(number, *,
+do_not_call=False, allowlist=None)`, `budget.budget_permits(projected, *, is_live=False)` + `budget.record_cost(...)`,
+`VoiceProvider.place_call(*, to_number, assistant)->CallResult`, `configure_assistant(*, variant="B", value_prop_path=None)`,
+`fetch_call_cost(*, call_id)->CostResult`; constants `DAILY_CALL_CAP=25`, `CALL_RETRY_MAX=2`, `MAX_LIVE_CALLS=6`.
+Plan: write `briefs/stage-5.md` → spawn ONE cold `general-purpose` executer (Stage 5 only) → PM-verify
+`CALL1`–`CALL4`/`CON1`/`CON4`/`CON5`/`SEC3` by running them → **independent reviewer gate** (consent chokepoint + budget
+guard + second-entry-point spy + import-safety) → commit → advance to Stage 6. Halt only on the 3 triggers.

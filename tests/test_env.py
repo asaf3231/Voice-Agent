@@ -190,13 +190,12 @@ class TestEnv4ImportSafety:
 
         Covers the full six-module ENV4 set (CLAUDE.md §1: config, server, tools,
         orchestrate, budget, consent) PLUS vapi_client + calendar_client — every
-        lazy singleton None at import. orchestrate.py lands at Stage 5; until then
-        the spec's six-module line is satisfied by the modules that exist.
+        lazy singleton None at import. Stage 5 adds app.orchestrate to this set.
         """
         result = subprocess.run(
             [sys.executable, "-c",
              "import app.config, app.budget, app.consent, app.tools, "
-             "app.calendar_client, app.vapi_client, app.server; "
+             "app.calendar_client, app.vapi_client, app.server, app.orchestrate; "
              "import app.budget as b; b.reset_ledger(); assert b._ledger is None; "
              "import app.consent as c; c.reset_allowlist(); assert c._allowlist is None; "
              "import app.calendar_client as cal; cal.reset_calendar(); assert cal._calendar is None; "

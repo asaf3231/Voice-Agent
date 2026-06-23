@@ -27,14 +27,18 @@ test:
 serve:
 	$(UVICORN) app.server:app --reload --host 0.0.0.0 --port 8000
 
-## call — GATED live-call launcher (Stages 5/8 required)
-## Refuses until consent + budget logic is wired in Stage 5/8.
+## call — GATED live-call launcher (Stage 5 wired; Stage 8 provisioning required)
+## Routes through consent_allows + budget_permits before place_call (CON1/SEC3).
+## Requires: a real consented number on the allowlist + a filled .env.
+## Usage: make call TO=+15551234567
 call:
-	@echo "ERROR: 'make call' is not yet enabled."
-	@echo "The live call launcher (scripts/place_demo_call.py) requires:"
-	@echo "  - Stage 5 consent + budget guard to be wired (CALL4/CON1)"
-	@echo "  - Stage 8 live provisioning to be complete (LIVE0)"
-	@echo "  - A real consented number: make call TO=<e164_number>"
+ifndef TO
+	@echo "ERROR: 'make call' requires a target number."
+	@echo "Usage: make call TO=<e164_number>"
+	@echo "Example: make call TO=+15551234567"
 	@echo ""
 	@echo "No call was placed. No cost incurred."
 	@exit 1
+else
+	$(VENV)/bin/python scripts/place_demo_call.py $(TO)
+endif

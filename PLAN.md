@@ -43,7 +43,7 @@ Status values: ⬜ Not started · 🔄 In progress · 🟡 Awaiting verification
 | 2 | Conversation design (persona, dialog policy, literals) | `CONV1`–`CONV6` | ✅ | ✅ Complete (2026-06-23, 150 green; winner **B** provisional pending Stage-6 re-run) |
 | 3 | Agent callable functions + booking | `TOOL1`–`TOOL5`, `BOOK1`–`BOOK3` | ✅ | ✅ Complete (2026-06-23, 201 green; OQ-VOICE-3 resolved) |
 | 4 | Voice-platform integration (Vapi + Realtime + webhooks) | `VOICE1`–`VOICE5`, `CON2`–`CON3` | ✅ | ✅ Complete (2026-06-23, **251 green**; offline scope — public-tunnel live smoke owed at Stage 8; **2 HIGH post-commit gate findings fixed** — see footer) |
-| 5 | Outbound orchestration + consent + budget guard | `CALL1`–`CALL4`, `CON1`, `CON4`, `CON5`, `SEC3` | ✅ | ⬜ Not started |
+| 5 | Outbound orchestration + consent + budget guard | `CALL1`–`CALL4`, `CON1`, `CON4`, `CON5`, `SEC3` | ✅ | ✅ Complete (2026-06-23, 287 green; **independent** reviewer gate → APPROVE) |
 | 6 | Offline evaluation harness | `EVAL1`–`EVAL6` | — | ⬜ Not started |
 | 7 | Anti-leakage & packaging hardening | `LEAK1`–`LEAK5`, `PKG1`–`PKG4` | ✅ | ⬜ Not started |
 | 8 | Live calling (lean) + receipts | `LIVE1`–`LIVE4`, `SEC5` | — | ⬜ Not started |
@@ -187,7 +187,7 @@ retries, voicemail, daily cap — all resilient, no live call in the default sui
 - [ ] `CALL3`/`CALL4` — ≤ `DAILY_CALL_CAP`/day; budget guard runs before every dial; over-budget halts cleanly.
 - [ ] `CON1`/`CON4`/`CON5` — allowlist is the single chokepoint; zero live calls in the default suite; `do_not_call` suppressed.
 - [ ] `SEC3`/`CON1` (second entry point) — **`scripts/place_demo_call.py` (`make call`) is spy-proven to route through `budget_permits` + `consent_allows` before `place_call`**, exactly like `orchestrate.py` — it must not construct the provider and dial directly (Red-Team 2026-06-23, Finding 8).
-**Status:** ⬜ Not started · **Reviewer gate:** ✅ (consent chokepoint + budget guard).
+**Status:** ✅ Complete (offline; PM-verified 2026-06-23 — **287 green**; `app/orchestrate.py` campaign runner [DNC→consent→daily-cap→budget-guard→dial, retries ≤ `CALL_RETRY_MAX`, daily cap defers not drops, over-budget halts clean] + `scripts/place_demo_call.py` [gated second entry point, consent+budget before `place_call`] + leads loader promoted from the test into the app [LEAD1]; ENV4 import-safe across 8 modules; no graded contract changed). · **Reviewer gate:** ✅ **genuinely independent** cold reviewer (NOT PM-inline — the corrected post-Stage-4 process): chokepoint clean in both entry points, no bypass; verdict **APPROVE**; 2 MINOR findings (dead imports; a trivially-passing retry-guard test) **both fixed by the PM** before commit.
 
 ---
 
@@ -258,20 +258,16 @@ Do not mark a stage complete if its QA checks were only drafted but not run.
 ---
 
 ## Current project state
-- **Status:** **Stages 0–4 ✅ (all offline, PM-verified & committed).** Running the **autonomous loop** (commit +
+- **Status:** **Stages 0–5 ✅ (all offline, PM-verified & committed).** Running the **autonomous loop** (commit +
   auto-advance per stage; halt only on the 3 triggers + Stage 8/9 coordination). Commits: `05cfee4` (spine) ·
   `1bef4e7` (`v1.0.0-stage1`) · `f867207` (Stage 2 A/B) · `405a083` (Stage 3 tools + booking; OQ-VOICE-3 resolved) ·
-  Stage 4 (Vapi adapter + Realtime assistant + signature-verified webhooks) + a Stage-4 **post-commit fix** of two
-  HIGH gate findings. **251 tests green.** Stage 4 was **recovered PM-led** from a prior session's mid-stage crash;
-  then an **independent reviewer gate caught two HIGH issues the prior inline review missed** — both now fixed
-  (NOTES 2026-06-23 "Stage 4 post-commit fix"): (#1, blocking) `tools.dispatch` now injects the calendar/clock for the
-  booking tools so `check_availability`/`book_meeting` actually work over the webhook (was always `invalid_input` → no
-  booking possible); (#2, live) `CalComCalendar.create_event` is now idempotent (no double-book on retry/redelivery).
-  **Process change:** contract-touching stages now get a genuinely independent reviewer pass (not the PM's own eyes)
-  before ✅/commit — the inline shortcut is retired for graded stages. **Carry-forward:** Stage-6 must enrich
-  `simulated_callee` + re-run the A/B (winner **B** provisional) and clear 3 minor eval findings (the 2 prior + the
-  `_find_invented_claim`/`_rng`/`__init__`-docstring trio the gate re-confirmed); the Stage-4 public-tunnel live webhook
-  smoke test is owed at Stage 8. `LIVE0` provisioning owned by Asaf (not a code gate).
+  `013c395` (Stage 4) · `85b2a4b` (Stage 4 HIGH-findings fix) · Stage 5 (orchestration + consent + budget guard).
+  **287 tests green.** **Reviewer process corrected after the Stage-4 miss:** contract-touching stages now get a
+  genuinely **independent** cold reviewer pass (not PM-inline) before ✅/commit — Stage 5 passed it (verdict APPROVE;
+  2 MINOR findings fixed: a dead import [§8] + a trivially-passing retry-guard test). **Carry-forward:** Stage-6 must
+  enrich `simulated_callee` + re-run the A/B (winner **B** provisional) and clear 3 minor eval findings
+  (`_find_invented_claim`/`_rng`/`__init__`-docstring); the Stage-4 public-tunnel live webhook smoke test is owed at
+  Stage 8. `LIVE0` provisioning owned by Asaf (not a code gate).
 - **Decisions locked:** service-only repo (no notebook); Vapi (Retell-swappable); OpenAI Realtime brain;
   lean live calling under a hard $50 cap; secrets+PII+fabricated-outcomes are the anti-leakage core;
   **operating model — `general-purpose` executers + native `/code-review` & `/security-review` gates;
@@ -279,9 +275,10 @@ Do not mark a stage complete if its QA checks were only drafted but not run.
 - **Open questions:** all four **✅ resolved 2026-06-23** (NOTES) — `OQ-VOICE-1` `REALTIME_MODEL =
   "gpt-4o-realtime-preview"`; `OQ-VOICE-2` **Vapi** primary + mandatory adapter (Retell-ready);
   `OQ-VOICE-3` **Cal.com API** + deterministic local mock; `OQ-VOICE-4` **3** consented tester numbers.
-- **Next action:** **Stage 5 — Outbound orchestration + consent + budget guard** (`app/orchestrate.py` — the campaign
-  runner over the synthetic lead list: consent gate + budget guard before dialing, retries, voicemail, daily cap, all
-  resilient, zero live calls in the default suite; `CALL1`–`CALL4`, `CON1`, `CON4`, `CON5`, `SEC3`) under the autonomous
-  loop; PM verifies + `/code-review` gate (consent chokepoint + budget guard), then auto-advances. **`SEC3`/`CON1`
-  second-entry-point spy** (`scripts/place_demo_call.py` must route through `budget_permits` + `consent_allows` before
-  `place_call`) lands here. Carry the Stage-6 obligations forward.
+- **Next action:** **Stage 6 — Offline evaluation harness** (`app/eval/harness.py` + enrich `rubric.py` &
+  `simulated_callee.py`; `tests/test_eval.py`; `EVAL1`–`EVAL6`) under the autonomous loop. This stage also discharges
+  the **carry-forward**: enrich `simulated_callee` so discovery-responsiveness is modeled, **re-run the A/B bake-off**
+  (winner **B** is provisional) and lock the persona, and clear the 3 minor eval findings
+  (`rubric._find_invented_claim` dead `claims` param + docstring; `simulated_callee._rng` unused; `eval/__init__`
+  stage-order docstring). Pure-eval ⇒ no reviewer gate (PM's own QA suffices), but scores must stay **computed, never
+  hardcoded** (`EVAL2`/`LEAK4`).

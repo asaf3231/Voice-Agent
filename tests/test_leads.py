@@ -4,6 +4,10 @@ LEAD1: data/leads.synthetic.json parsed by name; required fields present;
        missing/renamed field → clean explicit startup error, not later KeyError.
 LEAD2: data/icp.synthetic.json + data/value_prop.md load and validate.
 LEAD3: no lead name/company/phone/ICP/value-prop literal hardcoded in app/ code.
+
+Stage 5 update: load_leads() and load_icp() are now the canonical app loaders
+promoted into app/orchestrate.py. This module imports them from there — no
+duplicated logic (CLAUDE.md §8 / brief Stage 5). All tests remain identical.
 """
 
 from __future__ import annotations
@@ -14,6 +18,9 @@ from pathlib import Path
 
 import pytest
 
+# Stage 5: import the promoted loaders from the app (no duplicated logic, §8)
+from app.orchestrate import load_leads, load_icp  # noqa: F401 — re-exported for tests
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 APP_DIR = REPO_ROOT / "app"
 DATA_DIR = REPO_ROOT / "data"
@@ -23,52 +30,6 @@ ICP_FILE = DATA_DIR / "icp.synthetic.json"
 VALUE_PROP_FILE = DATA_DIR / "value_prop.md"
 
 REQUIRED_LEAD_FIELDS = {"lead_id", "first_name", "company", "phone_e164"}
-
-
-# ---------------------------------------------------------------------------
-# Lead loading helpers (these will live in a loader module in later stages;
-# for Stage 1 we test the logic inline and against the actual data files)
-# ---------------------------------------------------------------------------
-
-def load_leads(path: Path) -> list[dict]:
-    """Load and validate leads from *path*. Raises ValueError on schema error."""
-    if not path.exists():
-        raise FileNotFoundError(f"Leads file not found: {path}")
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Leads file is not valid JSON: {exc}") from exc
-
-    if not isinstance(data, dict) or "leads" not in data:
-        raise ValueError("Leads file must be a JSON object with a 'leads' key.")
-
-    leads = data["leads"]
-    if not isinstance(leads, list):
-        raise ValueError("'leads' must be a JSON array.")
-
-    for i, lead in enumerate(leads):
-        missing = REQUIRED_LEAD_FIELDS - set(lead.keys())
-        if missing:
-            raise ValueError(
-                f"Lead at index {i} is missing required fields: {missing}. "
-                "Required: lead_id, first_name, company, phone_e164."
-            )
-
-    return leads
-
-
-def load_icp(path: Path) -> dict:
-    """Load and validate ICP from *path*. Raises ValueError on schema error."""
-    if not path.exists():
-        raise FileNotFoundError(f"ICP file not found: {path}")
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"ICP file is not valid JSON: {exc}") from exc
-
-    if not isinstance(data, dict) or "icp" not in data:
-        raise ValueError("ICP file must be a JSON object with an 'icp' key.")
-    return data["icp"]
 
 
 # ---------------------------------------------------------------------------
