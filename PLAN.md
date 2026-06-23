@@ -45,7 +45,7 @@ Status values: ⬜ Not started · 🔄 In progress · 🟡 Awaiting verification
 | 4 | Voice-platform integration (Vapi + Realtime + webhooks) | `VOICE1`–`VOICE5`, `CON2`–`CON3` | ✅ | ✅ Complete (2026-06-23, **251 green**; offline scope — public-tunnel live smoke owed at Stage 8; **2 HIGH post-commit gate findings fixed** — see footer) |
 | 5 | Outbound orchestration + consent + budget guard | `CALL1`–`CALL4`, `CON1`, `CON4`, `CON5`, `SEC3` | ✅ | ✅ Complete (2026-06-23, 287 green; **independent** reviewer gate → APPROVE) |
 | 6 | Offline evaluation harness | `EVAL1`–`EVAL6` | — | ✅ Complete (2026-06-23, 335 green; A/B re-run flipped winner **B→A**, persona-lock awaiting Asaf) |
-| 7 | Anti-leakage & packaging hardening | `LEAK1`–`LEAK5`, `PKG1`–`PKG4` | ✅ | ⬜ Not started |
+| 7 | Anti-leakage & packaging hardening | `LEAK1`–`LEAK5`, `PKG1`–`PKG4` | ✅ | ✅ Complete (2026-06-23, 387 green; indep. security gate: 2 MED fixed; 1 HIGH → Stage-8 blocker) |
 | 8 | Live calling (lean) + receipts | `LIVE1`–`LIVE4`, `SEC5` | — | ⬜ Not started |
 | 9 | Video explanation + demo script | `VID1`–`VID3` | — | ⬜ Not started |
 
@@ -219,7 +219,17 @@ clean checkout and packages cleanly.
 **Definition of Done (QA: `LEAK1`–`LEAK5`, `PKG1`–`PKG4`):**
 - [ ] `LEAK1`–`LEAK5` — grep clean for secrets/card/PII/hardcoded data/abs-paths; no fabricated outcomes.
 - [ ] `PKG1`–`PKG4` — deps pinned; clean-checkout `make test`+`make serve`; allowlist packaging; `.gitignore` correct.
-**Status:** ⬜ Not started · **Reviewer gate:** ✅ (anti-leakage is the highest-leverage gate).
+**Status:** ✅ Complete (offline; PM-verified 2026-06-23 — **387 green**; `tests/test_leakage.py` [LEAK1–5 + PKG1–4 over the
+git-true tracked set] + `MANIFEST.in`; PM ran its **own** secret/PAN sweep [zero hits, `.env.example` placeholders only] +
+`git check-ignore` proof). · **Reviewer gate:** ✅ **independent security review** (native `/security-review` couldn't run —
+no git remote; substituted a cold independent security reviewer). Verdict CHANGES-REQUIRED → **2 MED fixed** (MANIFEST
+include/exclude ordering; PEM/JWT grep gap) + **2 LOW noted**; chokepoints re-confirmed clean. **1 HIGH deferred to Stage 8
+as a hard entry blocker** (see below).
+**⛔ Stage-8 ENTRY BLOCKER (security HIGH, Asaf decision):** the `BudgetLedger` is in-memory, so the **cumulative $50 cap
+is illusory across separate process invocations** (`make call` / multiple runs each start at $0; per-call $1 ceiling still
+holds). **No live call until the cumulative cap is genuinely persistent** — recommended fix: persist cumulative spend to a
+gitignored state file (opt-in `persist_path`; tests stay in-memory), reconciled with Stage-8 `capture_receipts.py`. See
+NOTES 2026-06-23 "Stage 7 … security gate".
 
 ---
 
@@ -269,12 +279,12 @@ Do not mark a stage complete if its QA checks were only drafted but not run.
   auto-advance per stage; halt only on the 3 triggers + Stage 8/9 coordination). Commits: `05cfee4` (spine) ·
   `1bef4e7` (`v1.0.0-stage1`) · `f867207` (Stage 2 A/B) · `405a083` (Stage 3 tools + booking; OQ-VOICE-3 resolved) ·
   `013c395` (Stage 4) · `85b2a4b` (Stage 4 HIGH-findings fix) · `1a99726` (Stage 5 orchestration) · Stage 6 (offline
-  eval harness). **335 tests green.** **Reviewer process corrected after the Stage-4 miss:** contract-touching stages
-  get a genuinely **independent** cold reviewer pass (not PM-inline) before ✅/commit (Stage 5 passed APPROVE). **Stage 6
-  discharged the carry-forward** (enriched `simulated_callee`, re-ran the A/B, closed the 3 eval findings). **Persona
-  LOCKED = A** (Asaf 2026-06-23; the enriched A/B flipped B→A, A books 2×; live default now "A", suite still 335 green).
-  The Stage-4 public-tunnel live webhook smoke test is owed at Stage 8. `LIVE0` provisioning owned by Asaf (not a code
-  gate).
+  eval harness) · `32dbbaf` (persona lock A) · Stage 7 (anti-leakage + packaging). **387 tests green.** **Reviewer
+  process corrected after the Stage-4 miss:** contract-touching stages get a genuinely **independent** cold reviewer pass
+  (Stage 5 APPROVE; Stage 7 independent **security** review). **Persona LOCKED = A** (Asaf 2026-06-23; A books 2×). **⛔
+  Stage-8 entry blocker (security HIGH):** the budget ledger is in-memory → the cumulative $50 cap is illusory across
+  invocations; must be made persistent before any live call (Asaf decision; pairs with Stage-8 receipts). The Stage-4
+  public-tunnel live webhook smoke test is also owed at Stage 8. `LIVE0` provisioning owned by Asaf (not a code gate).
 - **Decisions locked:** service-only repo (no notebook); Vapi (Retell-swappable); OpenAI Realtime brain;
   lean live calling under a hard $50 cap; secrets+PII+fabricated-outcomes are the anti-leakage core;
   **operating model — `general-purpose` executers + native `/code-review` & `/security-review` gates;
@@ -282,7 +292,8 @@ Do not mark a stage complete if its QA checks were only drafted but not run.
 - **Open questions:** all four **✅ resolved 2026-06-23** (NOTES) — `OQ-VOICE-1` `REALTIME_MODEL =
   "gpt-4o-realtime-preview"`; `OQ-VOICE-2` **Vapi** primary + mandatory adapter (Retell-ready);
   `OQ-VOICE-3` **Cal.com API** + deterministic local mock; `OQ-VOICE-4` **3** consented tester numbers.
-- **Next action:** **Stage 7 — Anti-leakage & packaging hardening** (`LEAK1`–`LEAK5`, `PKG1`–`PKG4`) under the autonomous
-  loop — the highest-leverage gate before live. It runs the native **`/security-review`** utility (CLAUDE.md §1.3) on this
-  PII/secret-handling system AND a genuinely independent reviewer pass (contract-adjacent: packaging/gitignore). Persona
-  lock **A** is done. Then Stage 8 (live, coordinate with Asaf + `LIVE0`) and Stage 9 (video).
+- **Next action:** **Stage 8 — Live calling (lean) + receipts** is the next stage but is a **planned coordination halt**
+  (real money; needs `LIVE0` green + Asaf). **Two entry gates must clear first:** (1) **[Asaf decision]** the security-HIGH
+  **budget-ledger persistence** fix (cumulative $50 cap must survive across invocations) — recommend implementing it with
+  Stage-8's `capture_receipts.py`; (2) `LIVE0` provisioning (Vapi number + keys, Cal.com, Realtime, public tunnel) — Asaf's
+  parallel track. Stage 8 also owes the Stage-4 public-tunnel signed-webhook smoke test. After Stage 8 → Stage 9 (video).

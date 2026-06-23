@@ -433,3 +433,41 @@ can start in parallel with the persona decision.
 Watch out for / open: **persona-lock decision pending** (the one halt); Stage-4 public-tunnel live webhook smoke owed at
 Stage 8; `LIVE0` provisioning is Asaf's parallel track + #1 schedule risk; recurring mid-stage crashes — re-verify disk
 vs ledger on resume.
+
+## 2026-06-23 20:37 — [VOICE] SESSION START (decision resolved → resume loop at Stage 7)
+Picking up: the halt decision is **RESOLVED** — Asaf chose **Lock A**; persona locked to **A (Consultative)** and
+committed (`32dbbaf`; live defaults flipped B→A in `build_system_prompt`/`configure_assistant`/conftest + docstrings;
+suite still **335 green**; reversible via `build_policy`). Stages 0–6 ✅, commits through `32dbbaf`.
+Resuming the autonomous loop at **Stage 7 — Anti-leakage & packaging hardening** (`LEAK1`–`LEAK5`, `PKG1`–`PKG4`).
+Recon: no `tests/test_leakage.py` yet; only `requirements.txt` present (no MANIFEST/pyproject); `.gitignore` already
+covers `.env*`/email/`REFERENCE/`/allowlist/recordings/transcripts/`receipts/raw`/`.venv` + the example negations;
+deps fully pinned with `==`.
+Plan: write `briefs/stage-7.md` → spawn ONE cold executer (test_leakage.py encoding LEAK1–5 + packaging hardening
+[PKG1–4: pinned, clean-checkout run, allowlist packaging, .gitignore]) → PM-verify the greps + clean-checkout run
+myself → run BOTH gates: native **`/security-review`** (the Stage-7 governance gate, CLAUDE.md §1.3) AND a genuinely
+**independent** cold reviewer (corrected process) → commit → advance. Halt only on the 3 triggers.
+
+## 2026-06-23 ~21:00 — [VOICE] SESSION END / HANDOFF (Stage 7 ✅ committed; HALT at the Stage-8 coordination boundary)
+Did: drove the loop through **Stage 7 — anti-leakage & packaging**. Cold executer built `tests/test_leakage.py`
+(LEAK1–5 + PKG1–4 over the git-true tracked set) + `MANIFEST.in`. PM-verified independently: ran my **own** secret/PAN
+sweep over `git ls-files` (zero hits; only `.env.example`, confirmed placeholders-only), `git check-ignore` proof,
+387 green. **Independent security gate:** native `/security-review` couldn't run (hardcodes a diff vs `origin/HEAD`; this
+repo has no remote — tooling limit, logged) → substituted a **cold independent security reviewer** over the diff + the
+whole pre-live governance surface. **Verdict CHANGES-REQUIRED** (it re-confirmed every chokepoint clean):
+- **2 MEDIUM → FIXED** (MANIFEST include/exclude ordering dropped the allowlist example from the sdist; the leakage grep
+  was blind to PEM/JWT) — both fixed + a self-check added; suite **387 green**.
+- **1 HIGH → DEFERRED to Stage 8 as a hard entry blocker** (Asaf decision): the `BudgetLedger` is in-memory, so the
+  **cumulative $50 cap is illusory across separate `make call`/process invocations** (per-call $1 ceiling still holds).
+  Recommended fix: persist cumulative spend to a gitignored state file, reconciled with Stage-8 `capture_receipts.py`.
+- **2 LOW noted** (Cal.com v1 key in query param — architectural; webhook header name unverified till live).
+Verified numbers (PM-run): **387 passed / 0 failed**; own secret/PAN grep over tracked set = 0 hits; chokepoints clean.
+Status now: ✅ **Stages 0–7 complete, PM-verified, committed.** **HALTED at the Stage-8 boundary** — a *planned*
+coordination point (live calls = real money; needs `LIVE0` + Asaf), now with TWO explicit entry gates:
+**(1) [Asaf decision] the budget-ledger-persistence HIGH** (make the cumulative cap real before any live call), and
+**(2) `LIVE0` provisioning** (Asaf's track). Also owed at Stage 8: the public-tunnel signed-webhook smoke test (Stage-4 carry).
+Next PM should: get Asaf's call on the budget-persistence fix (recommend: implement persistent ledger alongside Stage-8
+`capture_receipts.py`), confirm `LIVE0` status, then run Stage 8 with Asaf in the loop (consented numbers, MAX_LIVE_CALLS=6,
+half-day live-debug buffer, keep a recorded successful call for the Stage-9 video fallback). Stage 9 = video.
+Watch out for / open: **budget-persistence HIGH (Stage-8 blocker, Asaf decision)**; `LIVE0` lead time (#1 schedule risk);
+the Cal.com 409-only idempotency + the live Vapi signature header/payload field names still need live reconciliation;
+recurring mid-stage crashes — re-verify disk vs ledger on resume.

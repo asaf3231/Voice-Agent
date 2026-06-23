@@ -1,0 +1,113 @@
+# Alta Outbound Voice Agent — MANIFEST.in
+# Explicit packaging manifest (PKG3 — QA_checklist.md §11).
+#
+# INCLUDE: app, tests, scripts, synthetic data, spine files, examples.
+# EXCLUDE: .venv, real recordings/transcripts, raw receipts, .env,
+#          Home_Assignment_email.md, REFERENCE/, briefs/, handbacks/
+#
+# This file is the shipping allowlist — what goes into a source distribution
+# or an archival copy of the repo.  Sensitive paths are explicitly excluded.
+
+# ---------------------------------------------------------------------------
+# INCLUDE — application source
+# ---------------------------------------------------------------------------
+recursive-include app *.py
+recursive-include scripts *.py
+
+# ---------------------------------------------------------------------------
+# INCLUDE — deterministic offline test suite
+# ---------------------------------------------------------------------------
+recursive-include tests *.py
+recursive-include fixtures *.json
+
+# ---------------------------------------------------------------------------
+# INCLUDE — bounded synthetic data (no real PII — CLAUDE.md §4)
+# ---------------------------------------------------------------------------
+recursive-include data *.json *.md
+
+# ---------------------------------------------------------------------------
+# INCLUDE — spine / documentation / config files
+# ---------------------------------------------------------------------------
+include CLAUDE.md
+include PLAN.md
+include QA_checklist.md
+include NOTES.md
+include PM_LOG.md
+include ORCHESTRATION.md
+include PM_Methodology_Prompt.md
+include README.md
+include Makefile
+include requirements.txt
+include .env.example
+include consent_allowlist.example.json
+include .gitignore
+
+# ---------------------------------------------------------------------------
+# EXCLUDE — secrets & environment  (LEAK1 / SEC1)
+# ---------------------------------------------------------------------------
+exclude .env
+exclude .env.*
+global-exclude .env
+global-exclude .env.*
+
+# ---------------------------------------------------------------------------
+# EXCLUDE — Python virtual environment and caches
+# ---------------------------------------------------------------------------
+prune .venv
+prune .pytest_cache
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude .DS_Store
+
+# ---------------------------------------------------------------------------
+# EXCLUDE — the assignment email (carried the provided card number — LEAK1)
+# ---------------------------------------------------------------------------
+exclude Home_Assignment_email.md
+
+# ---------------------------------------------------------------------------
+# EXCLUDE — unaudited reference material (may carry other-project secrets)
+# ---------------------------------------------------------------------------
+prune REFERENCE
+
+# ---------------------------------------------------------------------------
+# EXCLUDE — real call artifacts (PII / raw cost evidence — LEAK2)
+# ---------------------------------------------------------------------------
+prune recordings
+prune transcripts
+prune receipts/raw
+global-exclude *.wav
+global-exclude *.mp3
+
+# ---------------------------------------------------------------------------
+# EXCLUDE — real consent allowlist (contains real phone numbers — CON1)
+# ---------------------------------------------------------------------------
+exclude consent_allowlist.json
+exclude consent_allowlist.*.json
+global-exclude allowlist.json
+
+# Re-include the tracked PLACEHOLDER allowlist AFTER the broad excludes above.
+# MANIFEST.in applies rules in order and the LAST matching rule wins; without
+# this, `consent_allowlist.*.json` matches `consent_allowlist.example.json` and
+# clobbers the include higher up, dropping the placeholder from the sdist
+# (breaks PKG3). Real allowlists (consent_allowlist.json / .*.json) stay
+# excluded; only the example ships.
+include consent_allowlist.example.json
+
+# ---------------------------------------------------------------------------
+# EXCLUDE — raw receipts (may carry account IDs — SEC5 / LEAK2)
+# NOTE: the redacted receipts/ (excluding receipts/raw/) may be included;
+# the raw sub-directory is excluded above.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# EXCLUDE — PM workflow / briefing artefacts (local, not graded artefacts)
+# ---------------------------------------------------------------------------
+prune briefs
+prune handbacks
+
+# ---------------------------------------------------------------------------
+# EXCLUDE — IDE / editor / Claude Code local settings
+# ---------------------------------------------------------------------------
+prune .claude
+prune .git
+exclude .gitignore

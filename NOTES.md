@@ -507,3 +507,32 @@ stay available via `build_policy("A"|"B")` — reversible.** **Impact:** PM-veri
 the flip (no test depended on B-as-default); `configure_assistant()` now emits `metadata.variant == "A"`. This is NOT a
 graded-contract change (the default variant is product config, not a §9 constant/literal). Stage-6 open decision →
 **RESOLVED**.
+
+### 2026-06-23 — Stage 7 PM verification + independent security gate (CHANGES-REQUIRED → Mediums fixed; High → Stage-8 blocker)
+**Built by:** cold executer (`tests/test_leakage.py` [LEAK1–5 + PKG1–4 over the git-true tracked set] + `MANIFEST.in`).
+**PM verification (run, not inspected):** full suite **387 passed / 0 failed**; my **own** secret/PAN sweep over
+`git ls-files` → zero hits (only `.env.example`, confirmed placeholders-only); `.env`/`Home_Assignment_email.md`/
+`REFERENCE/`/`consent_allowlist.json` git-ignored (`git check-ignore`); MANIFEST prunes the sensitive paths;
+ENV4 import-safe. No graded contract changed.
+**Independent security gate:** the native `/security-review` CLI **could not run** (it hardcodes a diff vs `origin/HEAD`;
+this repo is local-only, no remote) — a tooling limit, logged. Substituted a **cold independent security reviewer**
+(general-purpose, read-only) over the Stage-7 diff + the whole pre-live governance surface. **Verdict: CHANGES-REQUIRED.**
+It independently re-confirmed the chokepoints CLEAN (HMAC fail-closed/constant-time/raw-body; consent+budget before
+`place_call` in both entry points; masking everywhere; import-safety; no secret/PAN/PII/hardcoded-data/abs-path in the
+tracked set). Findings:
+- **[Medium → FIXED]** `MANIFEST.in` ordering: `exclude consent_allowlist.*.json` clobbered the explicit
+  `include consent_allowlist.example.json` (later rule wins) → example dropped from the sdist (PKG3). **Fixed:** re-include
+  the placeholder AFTER the broad excludes; real allowlists stay excluded. 
+- **[Medium → FIXED]** `tests/test_leakage.py` secret patterns were blind to **PEM private-key blocks** and **JWT bearer
+  tokens**. **Fixed:** added both patterns + an assembled-from-parts self-check (no literal PEM/JWT in source). Suite 387 green.
+- **[HIGH → DEFERRED to Stage 8 as a hard entry blocker; Asaf decision]** the `BudgetLedger` is **in-memory only**, so
+  `place_demo_call.py` (fresh ledger per `make call`) and the `orchestrate` singleton across separate processes both see
+  `cumulative=$0` — the **cumulative HARD_BUDGET_USD=$50 cap is illusory across invocations** (the per-call $1 ceiling
+  still holds, and there is no path *around* the guard — the guard just sees no history). Impact is **strictly Stage-8**
+  (no live call before Stage 8 + LIVE0 + Asaf). **Recommended fix (pairs with Stage-8 `capture_receipts.py`):** make the
+  ledger **persist cumulative spend to a gitignored state file** (opt-in `persist_path`; `get_ledger()` uses it,
+  `BudgetLedger()` stays in-memory for isolated tests) so both live entry points and receipts reconcile against one real
+  cumulative total. **This is a Stage-8 entry gate — no live call until the cumulative cap is genuinely persistent.**
+- **[Low ×2, noted]** Cal.com v1 sends the API key as a URL query param (`apiKey=`) — architectural (v1 has no Bearer at
+  `/slots`); no key is currently logged (httpx errors don't include the URL here). Webhook `SIGNATURE_HEADER`
+  (`x-vapi-signature`) name is unverified until Stage-8 live (fail-closed if wrong — no breach, just deaf). Both carry to Stage 8.
