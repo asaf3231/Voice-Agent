@@ -49,7 +49,7 @@ def main(argv: list[str] | None = None) -> int:
     load_env()
 
     # -- imports (all after load_env so keys are available if needed) ---------
-    from app.budget import BudgetLedger
+    from app.budget import get_ledger
     from app.consent import consent_allows, load_allowlist, mask_phone
     from app.vapi_client import VapiVoiceProvider
     from app.orchestrate import PROJECTED_COST_PER_CALL
@@ -73,7 +73,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     # -- GATE 2: budget guard (SEC3/CALL4) — MUST pass before place_call ------
-    ledger = BudgetLedger()
+    # Use the persistent singleton so cumulative spend persists across invocations
+    # (Stage-8 security-HIGH fix: the HARD_BUDGET_USD=$50 cap is now real, not illusory).
+    ledger = get_ledger()
     if not ledger.budget_permits(PROJECTED_COST_PER_CALL, is_live=True):
         snap = ledger.snapshot()
         print(
@@ -110,19 +112,38 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"Call placed. call_id={result.call_id!r}  status={result.status!r}")
 
-    # -- capture cost (best-effort; failure is non-fatal) ---------------------
+    # -- capture cost AND record it into the persistent ledger ----------------
+    # The call was placed → real spend occurred, so it MUST be recorded into the
+    # persistent singleton ledger or the cumulative HARD_BUDGET_USD cap stays
+    # illusory for this entry point (Stage-8 security review, Critical). Record the
+    # ACTUAL cost when available, else the conservative projected estimate so a
+    # cost-fetch failure can never let spend slip past the cumulative cap.
+    recorded_cost = float(PROJECTED_COST_PER_CALL)
     if result.call_id:
         try:
             cost_result = provider.fetch_call_cost(call_id=result.call_id)
             if cost_result.ok and cost_result.cost_usd is not None:
+                recorded_cost = cost_result.cost_usd
                 print(f"Cost: ${cost_result.cost_usd:.4f}")
             else:
                 print(
-                    f"Cost not yet available: {cost_result.message or cost_result.error}"
+                    f"Cost not yet available: {cost_result.message or cost_result.error}; "
+                    f"recording projected estimate ${recorded_cost:.4f}"
                 )
         except Exception as exc:  # noqa: BLE001
-            print(f"Warning: cost fetch raised: {exc}")
+            print(f"Warning: cost fetch raised: {exc}; "
+                  f"recording projected estimate ${recorded_cost:.4f}")
 
+    try:
+        ledger.record_cost(recorded_cost, is_live=True)
+    except ValueError as exc:  # over-cap alarm — surface loudly, never silently
+        print(f"BUDGET ALARM after a placed call: {exc}", file=sys.stderr)
+        return 1
+    snap = ledger.snapshot()
+    print(
+        f"Ledger updated: cumulative ${snap['cumulative_usd']:.4f} / "
+        f"${snap['hard_cap_usd']:.2f}  (live calls: {snap['live_call_count']})"
+    )
     return 0
 
 

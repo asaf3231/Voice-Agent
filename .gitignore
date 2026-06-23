@@ -17,6 +17,7 @@ allowlist.*
 recordings/
 transcripts/
 receipts/raw/
+receipts/.budget_ledger.json
 *.wav
 *.mp3
 

@@ -471,3 +471,40 @@ half-day live-debug buffer, keep a recorded successful call for the Stage-9 vide
 Watch out for / open: **budget-persistence HIGH (Stage-8 blocker, Asaf decision)**; `LIVE0` lead time (#1 schedule risk);
 the Cal.com 409-only idempotency + the live Vapi signature header/payload field names still need live reconciliation;
 recurring mid-stage crashes — re-verify disk vs ledger on resume.
+
+## 2026-06-23 21:13 — [VOICE] SESSION START (Asaf decisions → Stage 8 build half)
+Picking up: Asaf answered the two Stage-8 gate questions — **(1) FIX the budget-persistence HIGH now** (persistent
+file-backed ledger), **(2) LIVE0 is READY → proceed to Stage 8**. Stages 0–7 ✅, commits through `7011611`, 387 green.
+Plan for this block — build the **offline-testable** Stage-8 code, then coordinate the real-money live calls separately:
+(a) close the security-HIGH: add an **opt-in `persist_path`** to `BudgetLedger` (load cumulative on construct, save on
+`record_cost`; `get_ledger()` uses a gitignored default state file so `place_demo_call.py` + the orchestrate singleton
+accumulate across invocations; `BudgetLedger()` stays in-memory for isolated tests; caps + `budget_permits`/`record_cost`
+signatures UNCHANGED — not a graded-contract change); (b) build `scripts/capture_receipts.py` (pull per-call cost →
+redacted `receipts/`, SEC5) offline-testable with the fake provider; (c) gitignore the persist file + raw receipts.
+Then PM-verify + **independent review** (budget is contract-adjacent governance) + commit. **The actual live calls
+(LIVE1–LIVE2, real money, real numbers) are a human-coordinated step I will NOT trigger autonomously** — I'll prepare the
+runbook + the signed-webhook smoke test and hand the live trigger to Asaf (real `.env` + `make call`). Halt at the
+live-execution boundary.
+
+## 2026-06-23 ~21:30 — [VOICE] SESSION END / HANDOFF (Stage 8 build half ✅; HALT at the live-execution boundary)
+Did: built + verified + independently reviewed the **offline half of Stage 8**, closing the Stage-7 security-HIGH.
+- Cold executer: opt-in **persistent `BudgetLedger`** (gitignored state file → cumulative $50 cap real across invocations),
+  `scripts/capture_receipts.py` (redacted receipts, SEC5), `place_demo_call.py` → persistent singleton. Signatures/caps
+  unchanged (additive).
+- **Independent reviewer gate → CHANGES-REQUIRED — and it earned its keep again** (my own PM pass had missed it):
+  **[CRITICAL]** the demo script never called `record_cost`, so the persistent cap was still illusory for `make call`.
+  **PM-fixed surgically + added a regression test** (`test_persistent_ledger_advances_across_invocations`, 0.30→0.60 across
+  invocations). **[MED]** test-hygiene (module-level tests wrote to the real ledger file) → fixed with tmp-path + try/finally.
+  **[HIGH]** cross-process TOCTOU → **accepted as a documented operating constraint** (lean single-operator sequential
+  `make call`; OS-agnostic precludes a clean `fcntl` lock) — surfaced to Asaf. **[LOW]** cosmetic.
+Verified numbers (PM-run): **414 passed / 0 failed**; cross-instance cap holds (reproduced); ENV4 import-safe; state file
+numeric-only; real ledger file absent after the suite (no pollution).
+Status now: ✅ **Stage 8 BUILD HALF complete, PM-verified, independently reviewed, committed.** 🔄 **Stage 8 LIVE HALF is a
+human-coordinated, real-money step — HALTED here by design.** The PM does not place live calls autonomously.
+Next PM/Asaf should: run the LIVE half with the real `.env` + `LIVE0` (reported READY): `make serve` behind the public
+tunnel + the signed-webhook smoke test (Stage-4 carry); **sequential** `make call TO=<consented number>` → a real
+disclosure-first call that pitches + books (`LIVE1`/`LIVE2`); `capture_receipts.py` per call → PM reconciles cost ≤ caps
+(`LIVE3`/`LIVE4`/`SEC5`). Keep a recorded successful call for the Stage-9 video. Then **Stage 9 — video**.
+Watch out for / open: **cross-process budget-ledger limitation → run live calls SEQUENTIALLY**; the live Vapi signature
+header/payload field names + Cal.com 409-only idempotency still need live reconciliation; keep a recorded call as the
+Stage-9 fallback; verify `DISCLOSURE_LINE` byte-exact from the REAL transcript (`LIVE2`), never assumed.

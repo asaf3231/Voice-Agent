@@ -244,7 +244,16 @@ distinct number would require a new consent decision.)*
 - [ ] `LIVE1`/`LIVE2` — a real call opens with the byte-exact disclosure, pitches, and books a real event.
 - [ ] `LIVE3`/`LIVE4`/`SEC5` — per-call cost ≤ ceiling; cumulative ≤ caps (verified from receipts); redacted receipts captured.
 - **⏳ Live-debug buffer (Red-Team 2026-06-23, Finding 7):** reserve ~half a day for live-call failure modes (barge-in, latency, voicemail misclassification, cost surprises). With only 3 numbers / `MAX_LIVE_CALLS=6` and Stage 8→9 back-to-back, do **not** schedule the live session same-day as the video with zero slack. **Capture and keep a recorded successful call** as a fallback for the Stage-9 video.
-**Status:** ⬜ Not started · **Reviewer gate:** — (PM verifies live results directly). Resolves `OQ-VOICE-4`.
+**Status:** 🔄 In progress — **build half ✅ (offline; PM-verified 2026-06-23, 414 green)**, live half pending human execution.
+*Build half:* persistent `BudgetLedger` (gitignored state file → the cumulative $50 cap is now **real across invocations**,
+closing the Stage-7 security-HIGH) + `scripts/capture_receipts.py` (redacted receipts, SEC5) + `place_demo_call.py` now
+records spend. **Independent review → CHANGES-REQUIRED → Critical fixed + proven** (the demo script wasn't recording cost;
+added a regression test), 1 MED fixed (test hygiene), 1 HIGH accepted as a documented operating constraint (cross-process
+TOCTOU — run live calls sequentially; OS-agnostic precludes a clean lock), 1 LOW cosmetic. *Live half (human-coordinated,
+real money — PM will NOT auto-place calls):* `LIVE1`/`LIVE2` (real disclosure-first call that pitches + books), `LIVE3`/`LIVE4`/
+`SEC5` (cost reconciliation from receipts), + the Stage-4 public-tunnel signed-webhook smoke test. Needs the real `.env` +
+Asaf running `make call` to the 3 consented numbers. · **Reviewer gate:** ✅ build half (independent); live results PM-verified
+directly. Resolves `OQ-VOICE-4` once the live calls run.
 
 ---
 
@@ -285,6 +294,11 @@ Do not mark a stage complete if its QA checks were only drafted but not run.
   Stage-8 entry blocker (security HIGH):** the budget ledger is in-memory → the cumulative $50 cap is illusory across
   invocations; must be made persistent before any live call (Asaf decision; pairs with Stage-8 receipts). The Stage-4
   public-tunnel live webhook smoke test is also owed at Stage 8. `LIVE0` provisioning owned by Asaf (not a code gate).
+- **Stage 8 (in progress):** **build half ✅** (PM-verified 2026-06-23, **414 green**) — the budget-persistence security-HIGH
+  is **closed** (cumulative $50 cap real across invocations; independent review caught + we fixed a Critical where the demo
+  script wasn't recording spend) + `capture_receipts.py`. **Live half pending Asaf** (real `.env` + `make call` to the 3
+  consented numbers; the PM will not auto-place live calls). Operating constraint: run live calls **sequentially** (accepted
+  cross-process budget-ledger limitation).
 - **Decisions locked:** service-only repo (no notebook); Vapi (Retell-swappable); OpenAI Realtime brain;
   lean live calling under a hard $50 cap; secrets+PII+fabricated-outcomes are the anti-leakage core;
   **operating model — `general-purpose` executers + native `/code-review` & `/security-review` gates;
@@ -292,8 +306,11 @@ Do not mark a stage complete if its QA checks were only drafted but not run.
 - **Open questions:** all four **✅ resolved 2026-06-23** (NOTES) — `OQ-VOICE-1` `REALTIME_MODEL =
   "gpt-4o-realtime-preview"`; `OQ-VOICE-2` **Vapi** primary + mandatory adapter (Retell-ready);
   `OQ-VOICE-3` **Cal.com API** + deterministic local mock; `OQ-VOICE-4` **3** consented tester numbers.
-- **Next action:** **Stage 8 — Live calling (lean) + receipts** is the next stage but is a **planned coordination halt**
-  (real money; needs `LIVE0` green + Asaf). **Two entry gates must clear first:** (1) **[Asaf decision]** the security-HIGH
-  **budget-ledger persistence** fix (cumulative $50 cap must survive across invocations) — recommend implementing it with
-  Stage-8's `capture_receipts.py`; (2) `LIVE0` provisioning (Vapi number + keys, Cal.com, Realtime, public tunnel) — Asaf's
-  parallel track. Stage 8 also owes the Stage-4 public-tunnel signed-webhook smoke test. After Stage 8 → Stage 9 (video).
+- **Next action:** **Stage 8 LIVE half — human-coordinated, real money (PM will NOT auto-place calls).** The offline build
+  half is done (414 green; security-HIGH closed). Asaf runs, with the real `.env` + `LIVE0` (now reported READY):
+  (1) `make serve` behind the public HTTPS tunnel + one signed-webhook smoke test (Stage-4 carry); (2) `make call
+  TO=<one of the 3 consented numbers>` — **sequentially** — to get a real disclosure-first call that pitches + books a
+  meeting (`LIVE1`/`LIVE2`); (3) `python scripts/capture_receipts.py <call_id>` per call → redacted `receipts/`; PM then
+  reconciles cost ≤ caps from the receipts + the persistent ledger (`LIVE3`/`LIVE4`/`SEC5`). **Keep a recorded successful
+  call** for the Stage-9 video fallback. Then **Stage 9 — video**. I'll prepare the live runbook + verify results; I do not
+  place the live calls myself.

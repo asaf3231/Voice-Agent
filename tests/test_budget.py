@@ -1,12 +1,17 @@
 """Stage 1 — SEC2, SEC3, SEC4 tests.
+Stage 8 — persistence tests (the cumulative cap is real across process invocations).
 
 SEC2: budget ledger correctness — records costs deterministically, tested at boundaries.
 SEC3: hard cap enforced before dialing — budget_permits() returns False at boundaries.
 SEC4: live sub-caps — live runs respect LIVE_CALL_BUDGET_USD and MAX_LIVE_CALLS.
+Persistence: two instances on the same persist_path share the cumulative total;
+             the cumulative guard blocks when the total across instances hits the cap;
+             a missing or corrupt file degrades gracefully (starts at 0, never crashes).
 """
 
 from __future__ import annotations
 
+import json
 import pytest
 
 from app.budget import BudgetLedger
@@ -255,18 +260,175 @@ class TestLiveSubCaps:
 class TestModuleLevelConvenience:
     """The module-level budget_permits / record_cost delegates to the singleton."""
 
-    def test_module_level_budget_permits(self):
-        """budget_permits() at module level works (doesn't crash without .env)."""
-        import app.budget as bud
-        bud.reset_ledger()
-        # Fresh singleton — should permit a small projected cost
-        result = bud.budget_permits(0.10)
-        assert result is True
-        bud.reset_ledger()
+    def test_module_level_budget_permits(self, monkeypatch, tmp_path):
+        """budget_permits() at module level works (doesn't crash without .env).
 
-    def test_module_level_record_cost(self):
+        Point the singleton's state file at tmp_path so this test NEVER touches the
+        real receipts/.budget_ledger.json (test-hygiene: a failure here must not
+        pollute a live operator's persistent ledger — Stage-8 review Finding 3).
+        """
         import app.budget as bud
+        monkeypatch.setattr(bud, "_LEDGER_STATE_PATH", tmp_path / "ledger.json")
         bud.reset_ledger()
-        bud.record_cost(0.25)
-        assert abs(bud.get_ledger().cumulative - 0.25) < 1e-9
+        try:
+            assert bud.budget_permits(0.10) is True  # fresh singleton permits a small cost
+        finally:
+            bud.reset_ledger()
+
+    def test_module_level_record_cost(self, monkeypatch, tmp_path):
+        """record_cost() at module level updates the singleton (tmp state file)."""
+        import app.budget as bud
+        monkeypatch.setattr(bud, "_LEDGER_STATE_PATH", tmp_path / "ledger.json")
         bud.reset_ledger()
+        try:
+            bud.record_cost(0.25)
+            assert abs(bud.get_ledger().cumulative - 0.25) < 1e-9
+        finally:
+            bud.reset_ledger()
+
+
+# ---------------------------------------------------------------------------
+# Stage 8 — Persistence tests (the HIGH fix: cumulative cap real across instances)
+# ---------------------------------------------------------------------------
+
+class TestBudgetLedgerPersistence:
+    """Persistence: opt-in persist_path makes the cumulative cap real across instances.
+
+    These tests use tmp_path (pytest fixture) for isolation — they do NOT touch
+    the real _LEDGER_STATE_PATH or the module-level singleton.
+    """
+
+    def test_persist_path_none_is_in_memory_only(self):
+        """Default (persist_path=None) never touches the filesystem."""
+        b = BudgetLedger()  # no persist_path
+        b.record_cost(0.50)
+        assert b.persist_path is None
+        assert abs(b.cumulative - 0.50) < 1e-9
+
+    def test_persistent_ledger_writes_state_on_record_cost(self, tmp_path):
+        """record_cost with persist_path writes the state file."""
+        state_file = tmp_path / "ledger.json"
+        b = BudgetLedger(persist_path=state_file)
+        b.record_cost(0.75)
+        assert state_file.exists(), "state file must be written after record_cost"
+        data = json.loads(state_file.read_text())
+        from decimal import Decimal
+        assert abs(float(Decimal(data["cumulative"])) - 0.75) < 1e-9
+
+    def test_second_instance_loads_prior_state(self, tmp_path):
+        """A second BudgetLedger on the same path loads the cumulative from the first.
+
+        This is the core HIGH fix: separate process invocations (each building a
+        BudgetLedger from the same file) share the cumulative total.
+        """
+        state_file = tmp_path / "ledger.json"
+
+        # First instance — spends $0.60
+        b1 = BudgetLedger(persist_path=state_file)
+        b1.record_cost(0.60)
+        assert abs(b1.cumulative - 0.60) < 1e-9
+
+        # Second instance — loads state; must see $0.60 already spent
+        b2 = BudgetLedger(persist_path=state_file)
+        assert abs(b2.cumulative - 0.60) < 1e-9, (
+            f"Second instance should load prior cumulative $0.60, got ${b2.cumulative}"
+        )
+
+    def test_cumulative_cap_enforced_across_instances(self, tmp_path):
+        """The cumulative hard cap blocks once the total across two instances hits it.
+
+        This is the exact security-HIGH scenario: without persistence the second
+        process saw $0 and permitted the call; with persistence it sees the real
+        cumulative and must refuse.
+        """
+        state_file = tmp_path / "ledger.json"
+        cap = 1.00  # small cap for the test
+
+        # First instance — spends most of the cap
+        b1 = BudgetLedger(persist_path=state_file, hard_budget=_d(cap), per_call_ceiling=_d(0.80))
+        b1.record_cost(0.80)
+
+        # Second instance on the same file — should see $0.80 already spent
+        b2 = BudgetLedger(persist_path=state_file, hard_budget=_d(cap), per_call_ceiling=_d(0.80))
+        assert abs(b2.cumulative - 0.80) < 1e-9
+
+        # $0.80 cumulative + $0.30 projected = $1.10 > cap $1.00 → must refuse
+        assert b2.budget_permits(0.30) is False, (
+            "budget_permits must be False when cumulative from prior invocation + "
+            "projected exceeds the hard cap (the HIGH fix)"
+        )
+
+    def test_two_instances_accumulate_together(self, tmp_path):
+        """Each record_cost from any instance updates the shared persistent state."""
+        state_file = tmp_path / "ledger.json"
+
+        b1 = BudgetLedger(persist_path=state_file, hard_budget=_d(10.0), per_call_ceiling=_d(5.0))
+        b1.record_cost(1.00)
+
+        b2 = BudgetLedger(persist_path=state_file, hard_budget=_d(10.0), per_call_ceiling=_d(5.0))
+        b2.record_cost(2.00)
+
+        # Fresh third instance sees the total: $1.00 + $2.00 = $3.00
+        b3 = BudgetLedger(persist_path=state_file, hard_budget=_d(10.0), per_call_ceiling=_d(5.0))
+        assert abs(b3.cumulative - 3.00) < 1e-9
+
+    def test_missing_state_file_starts_at_zero(self, tmp_path):
+        """A missing state file → start at $0 (normal first run); no crash."""
+        state_file = tmp_path / "nonexistent.json"
+        assert not state_file.exists()
+        b = BudgetLedger(persist_path=state_file)
+        assert b.cumulative == 0.0
+        assert b.live_cumulative == 0.0
+        assert b.live_call_count == 0
+
+    def test_corrupt_state_file_degrades_gracefully(self, tmp_path):
+        """A corrupt state file → start at $0 with a log warning; never crash (§6)."""
+        state_file = tmp_path / "corrupt.json"
+        state_file.write_text("{not valid json{{{{")
+        # Must not raise
+        b = BudgetLedger(persist_path=state_file)
+        assert b.cumulative == 0.0, (
+            "corrupt state file must degrade to $0, never crash"
+        )
+
+    def test_partial_state_file_uses_defaults_for_missing_keys(self, tmp_path):
+        """Partial state (missing live fields) starts those at 0."""
+        state_file = tmp_path / "partial.json"
+        state_file.write_text(json.dumps({"cumulative": "0.500000"}))
+        b = BudgetLedger(persist_path=state_file)
+        assert abs(b.cumulative - 0.50) < 1e-9
+        assert b.live_cumulative == 0.0
+        assert b.live_call_count == 0
+
+    def test_atomic_write_idempotent_on_same_path(self, tmp_path):
+        """Multiple record_cost calls on the same path each update the file correctly."""
+        state_file = tmp_path / "ledger.json"
+        b = BudgetLedger(persist_path=state_file, hard_budget=_d(10.0), per_call_ceiling=_d(5.0))
+        b.record_cost(1.00)
+        b.record_cost(0.50)
+        data = json.loads(state_file.read_text())
+        from decimal import Decimal
+        assert abs(float(Decimal(data["cumulative"])) - 1.50) < 1e-9
+
+    def test_persist_path_string_is_accepted(self, tmp_path):
+        """persist_path can be a str, not just a Path."""
+        state_file = str(tmp_path / "ledger_str.json")
+        b = BudgetLedger(persist_path=state_file)  # type: ignore[arg-type]
+        b.record_cost(0.20)
+        import os
+        assert os.path.exists(state_file), "state file must exist after record_cost"
+
+    def test_state_file_contains_no_secrets(self, tmp_path):
+        """The state file must contain ONLY numeric spend fields — no phone/key/secret."""
+        state_file = tmp_path / "ledger.json"
+        b = BudgetLedger(persist_path=state_file)
+        b.record_cost(0.33, is_live=True)
+        data = json.loads(state_file.read_text())
+        # Only these three keys are permitted
+        assert set(data.keys()) == {"cumulative", "live_cumulative", "live_call_count"}, (
+            f"state file must contain only spend fields; got {set(data.keys())}"
+        )
+        # All values must be numeric strings or ints — no free-text
+        assert isinstance(data["live_call_count"], int)
+        assert isinstance(data["cumulative"], str)
+        assert isinstance(data["live_cumulative"], str)

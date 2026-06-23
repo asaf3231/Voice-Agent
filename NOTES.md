@@ -536,3 +536,39 @@ tracked set). Findings:
 - **[Low ×2, noted]** Cal.com v1 sends the API key as a URL query param (`apiKey=`) — architectural (v1 has no Bearer at
   `/slots`); no key is currently logged (httpx errors don't include the URL here). Webhook `SIGNATURE_HEADER`
   (`x-vapi-signature`) name is unverified until Stage-8 live (fail-closed if wrong — no breach, just deaf). Both carry to Stage 8.
+
+### 2026-06-23 — Stage 8 (build half) PM verification + independent review (Critical caught & fixed)  *(PM-verified)*
+**Asaf decisions:** fix the budget-persistence HIGH **now**; **LIVE0 is READY**, proceed to Stage 8. Persona already locked A.
+**Built by:** cold executer — opt-in persistent `BudgetLedger` (`persist_path`; atomic temp+`os.replace` save; missing/corrupt
+→ $0 + warning, never crash); `get_ledger()` uses a gitignored default state file (`receipts/.budget_ledger.json`) so the
+live entry points accumulate across invocations; `scripts/capture_receipts.py` (redacted per-call receipts, SEC5);
+`place_demo_call.py` switched to the persistent singleton. Caps/§9/`budget_permits`/`record_cost` signatures UNCHANGED
+(additive — not a graded-contract change).
+**PM verification (run, not inspected):** I reproduced the cross-instance behavior myself — a 2nd ledger on the same path
+loads the prior cumulative; once cumulative+projected would exceed the cap, `budget_permits` returns False **across
+instances**; state file holds numeric spend only; ENV4 import-safe (no file I/O at import); the real ledger file is absent
+after the suite (no pollution).
+**Independent reviewer gate (corrected process — budget is contract-adjacent governance + a security fix): VERDICT
+CHANGES-REQUIRED.** It re-confirmed the atomic write, corruption resilience, redaction, import-safety, and unchanged
+signatures — and caught what my own pass missed:
+- **[CRITICAL → FIXED + PROVEN]** `place_demo_call.py` read the ledger (`budget_permits`) but **never called `record_cost`**
+  after a successful call → the persistent cumulative never advanced via `make call` → the cap was still illusory for THAT
+  entry point (the HIGH fix only worked for `orchestrate.py`, which does record). **Fix:** the demo script now records the
+  actual cost (or a conservative `PROJECTED_COST_PER_CALL` fallback if cost-fetch fails) into the persistent singleton,
+  with an over-cap alarm. **Regression test added** (`test_persistent_ledger_advances_across_invocations`): two simulated
+  invocations advance cumulative 0.30→0.60. Suite **414 green**.
+- **[MEDIUM → FIXED]** module-level convenience tests wrote to the REAL `receipts/.budget_ledger.json` and cleaned up
+  inline (a failing assert would leave it polluted). **Fix:** they `monkeypatch` the state path to `tmp_path` + use
+  `try/finally` — they never touch the real file (verified: real file absent post-suite).
+- **[HIGH → ACCEPTED as a documented limitation]** cross-process TOCTOU: two *simultaneous* processes can both load stale
+  state and overspend (no file lock). **Decision:** accept for the lean live demo — single operator, **sequential** `make
+  call`, `MAX_LIVE_CALLS=6`, no parallel `orchestrate` against the live budget; a clean cross-platform file lock conflicts
+  with the graded **OS-agnostic** requirement (`fcntl` is Unix-only). **Operating constraint (Stage 8):** run live calls
+  sequentially; do not run the campaign runner concurrently with `make call` against the live budget. Surfaced to Asaf.
+- **[LOW]** `_LEDGER_STATE_PATH` resolved at import (path construction only, no I/O) — cosmetic, no action.
+The Critical + Medium were PM-fixed surgically (no executer respawn — budget rule) and re-verified with a dedicated test;
+the residual High is an accepted, documented operating constraint, not a code defect.
+**⏭ Remaining for Stage 8 (human-coordinated, real money):** the actual live calls (LIVE1–LIVE2 — disclosure-first,
+pitch, book a real meeting), `LIVE3`/`SEC5` cost reconciliation from receipts, and the Stage-4 public-tunnel signed-webhook
+smoke test. These need the real `.env` + Asaf running `make call` to the 3 consented numbers — **the PM will not place live
+calls autonomously.**

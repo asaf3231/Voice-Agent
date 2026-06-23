@@ -660,6 +660,61 @@ class TestSec3DemoCallSpyTest:
         # Script exited non-zero
         assert result != 0
 
+    def test_persistent_ledger_advances_across_invocations(
+        self, tmp_allowlist, tmp_path, monkeypatch
+    ):
+        """Stage-8 Critical fix: a successful place_demo_call.main() RECORDS spend into
+        the persistent ledger, so cumulative advances across separate invocations — the
+        cap is real for the `make call` entry point, not only orchestrate.py.
+        """
+        import importlib
+        import scripts.place_demo_call
+        importlib.reload(scripts.place_demo_call)
+        import app.budget as bud
+        from app.vapi_client import CallResult, CostResult
+
+        # Point the persistent singleton at a tmp file — NEVER the real ledger.
+        monkeypatch.setattr(bud, "_LEDGER_STATE_PATH", tmp_path / "ledger.json")
+        bud.reset_ledger()
+
+        monkeypatch.setattr("app.config.load_env", lambda *a, **kw: None)
+        from app.consent import load_allowlist as real_load_allowlist
+        tmp_numbers = real_load_allowlist(tmp_allowlist)
+        monkeypatch.setattr("app.consent.load_allowlist", lambda *a, **kw: tmp_numbers)
+        monkeypatch.setattr(
+            "app.consent.consent_allows",
+            lambda number, *, do_not_call=False, allowlist=None: number in tmp_numbers,
+        )
+        monkeypatch.setattr(
+            "app.vapi_client.VapiVoiceProvider.configure_assistant",
+            lambda self, **kw: {},
+        )
+        monkeypatch.setattr(
+            "app.vapi_client.VapiVoiceProvider.place_call",
+            lambda self, **kw: CallResult(ok=True, call_id="c-1", status="queued"),
+        )
+        monkeypatch.setattr(
+            "app.vapi_client.VapiVoiceProvider.fetch_call_cost",
+            lambda self, **kw: CostResult(ok=True, cost_usd=0.30),
+        )
+
+        try:
+            rc1 = scripts.place_demo_call.main([ALLOWED_NUMBER])
+            assert rc1 == 0
+            assert abs(bud.get_ledger().cumulative - 0.30) < 1e-9, (
+                "first call must RECORD spend into the persistent ledger"
+            )
+            # Simulate a SEPARATE invocation: drop the in-memory singleton so the next
+            # main() reloads cumulative from the tmp file (cross-invocation persistence).
+            bud.reset_ledger()
+            rc2 = scripts.place_demo_call.main([ALLOWED_NUMBER])
+            assert rc2 == 0
+            assert abs(bud.get_ledger().cumulative - 0.60) < 1e-9, (
+                "cumulative must advance across invocations — the Stage-8 Critical fix"
+            )
+        finally:
+            bud.reset_ledger()
+
     def test_no_number_arg_exits_nonzero(self, monkeypatch):
         """SEC3: place_demo_call.py with no argument exits 1 (no call placed)."""
         import importlib
