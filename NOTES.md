@@ -448,3 +448,51 @@ back to the singletons); governance-level disposition statuses (`suppressed`/`co
 **Known limitation (carry to Stage 8):** `place_demo_call.py` uses a fresh in-process `BudgetLedger` per invocation —
 cumulative live spend across separate `make call` runs is reconciled via **receipts** (SEC5/LIVE3), not in-memory (an
 in-memory ledger resets each process regardless). **Deviations:** none. **DECISION-NEEDED:** none.
+
+### 2026-06-23 — Stage 6 handback (executer)  *(awaiting PM verification)*
+**Built by:** cold SWE executer. **Files touched:** `app/eval/__init__.py` (docstring fix), `app/eval/rubric.py` (dead param removed), `app/eval/simulated_callee.py` (discovery-responsiveness enrichment + `_rng` usage), `app/eval/harness.py` (new), `tests/test_eval.py` (new, 48 tests), `fixtures/transcripts/cooperative_booked.json` (new), `fixtures/transcripts/no_disclosure_regression.json` (new), `fixtures/transcripts/phantom_booking_regression.json` (new). No graded contracts changed; no DECISION-NEEDED.
+
+**3 carry-forward findings closed:**
+1. `rubric._find_invented_claim(transcript, claims)` dead `claims` param → **removed**. Signature is now `_find_invented_claim(transcript)`. Docstring corrected to honestly describe what it does (flags $/%/Nx numeric shapes — forbidden by the value-prop file regardless of the claims set). Call site in `_compute_compliance_ok` updated. Verified by EVAL3 signature test.
+2. `simulated_callee._rng` seeded but unused → **now used** in `_slot_turn` for stochastic slot acceptance. The per-instance seeded RNG governs discovery-responsive acceptance for COOPERATIVE (no-discovery path, threshold 0.85) and PROBING (post-discovery path, threshold 0.70). Verified by EVAL4 rng_used test.
+3. `app/eval/__init__.py` Stage docstring "PITCH → DISCOVERY" wrong order → **corrected** to "OPENING → {A: DISCOVERY → PITCH | B: PITCH} → OBJECTION* → PROPOSE_SLOT → CLOSE → DONE" (matches persona.py state machine). Verified by ENV4 docstring test.
+
+**Stage-6 enrichment decisions (none graded):**
+- `_saw_discovery` flag on `SimulatedCallee` tracks whether the agent passed through `Stage.DISCOVERY` before `PROPOSE_SLOT`. Used in `_slot_turn` to route PROBING and COOPERATIVE personas through discovery-responsive acceptance logic.
+- Acceptance thresholds (`_ACCEPT_THRESHOLD_COOPERATIVE_NO_DISCOVERY = 0.85`, `_ACCEPT_THRESHOLD_PROBING_WITH_DISCOVERY = 0.70`) are class-level constants on `SimulatedCallee`. With `RANDOM_SEED=42`, the first draw is 0.6394 → both thresholds pass (0.639 < 0.85 for cooperative-without-discovery; 0.639 < 0.70 for probing-with-discovery). Fully deterministic.
+- New reply texts added (`_SLOT_REPLY_POST_DISCOVERY`, `_SLOT_REPLY_NO_DISCOVERY`) — all contain "tuesday" so `_callee_accepted` recognizes them without changing `persona.py`. The `Persona`/`Stage`/`Disposition`/`Turn` shared vocab shape is UNCHANGED.
+- `harness.py` wraps `bakeoff.run_cells` so harness and bake-off share the same runner; harness adds aggregate machinery + fixture loading on top.
+
+**Re-run A/B bake-off (enriched, computed — PM must re-run to verify):**
+```
+variant | name                         | book_rate | disclosure_rate | objection_handled_rate | compliance_rate | avg_agent_turns
+--------+------------------------------+-----------+-----------------+------------------------+-----------------+----------------
+A       | Consultative / discovery-led | 0.4       | 0.8             | 1.0                    | 1.0             | 3.4
+B       | Direct / value-first         | 0.2       | 0.8             | 1.0                    | 1.0             | 2.6
+```
+**Recommended winner (on the numbers): Variant A (Consultative / discovery-led).** Reason: after enrichment, the core hypothesis is now testable. A's book_rate (0.4) is double B's (0.2); disclosure, objection-handling, and compliance still tie. The discovery stage earns a booking from the probing persona (which keeps declining without discovery). Avg_turns are higher for A (3.4 vs 2.6) — a cost tradeoff — but the book-rate advantage is decisive. **PM must adjudicate and lock the persona** (do not change `build_system_prompt`'s default variant without PM decision).
+
+**QA results (run, not inspected):**
+- Baseline held: 287 passed (pre-Stage-6)
+- Stage-6 additions: 48 new tests in `tests/test_eval.py` — all 48 passed
+- Full suite: **335 passed, 0 failed** (run twice — deterministic)
+- ENV4 import-safety from empty cwd (`/tmp`): all 7+1 (eval.harness) modules import-safe; httpx NOT in sys.modules
+
+**Deviations:** none. **DECISION-NEEDED:** none. **Blockers/risks:** none (pure-eval stage, no live paths).
+
+### 2026-06-23 — Stage 6 PM verification + persona-lock decision surfaced  *(PM-verified, not the executer's word)*
+**PM verification (run, not inspected):** full suite **335 passed / 0 failed, deterministic across two runs**; ENV4
+import-safe (eval package + `app.eval.harness` from an empty cwd, httpx not pulled); **PM independently re-ran
+`run_bakeoff()` and reproduced the table exactly** (A book 0.4 / B book 0.2; disclosure 0.8 / objection 1.0 /
+compliance 1.0 tie; avg_turns A 3.4 / B 2.6); the 3 findings are genuinely fixed (`_find_invented_claim(transcript)` —
+dead `claims` param gone; `self._rng` now consumed in `_slot_turn`; `eval/__init__` Stage docstring corrected). No
+graded contract changed; pure-eval ⇒ no reviewer gate (PM QA suffices). Stage 6 is **code-complete & PM-verified**.
+**⚠ OPEN DECISION (surfaced to Asaf — the provisional persona winner FLIPPED):** the Stage-2 bake-off TIED on the four
+criteria and B (Direct) won only on the efficiency tiebreak — *provisional, pending enrichment*. Now that
+`simulated_callee` models discovery-responsiveness, the computed re-run gives **A (Consultative) a 2× book-rate
+(0.4 vs 0.2)**, tying on disclosure/objection/compliance, costing only ~0.8 more avg turns. **On the numbers, A is the
+winner** (exactly the data-driven call Stage 2 was designed to make). Locking A means flipping the live default
+`variant="B"→"A"` in `persona.build_system_prompt` + `vapi_client.configure_assistant` (+ conftest fake default +
+docstrings) — it changes the **live demo persona** (the video), so per "surface decisions, don't bury them" the PM did
+**NOT** auto-flip it inside the Stage-6 commit. **Recommendation: lock A.** Not blocking Stage 7 (anti-leakage/packaging
+doesn't depend on the persona); must be locked before Stage 8 (live). Awaiting Asaf's confirm.

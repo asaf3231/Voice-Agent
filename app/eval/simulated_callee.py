@@ -1,9 +1,9 @@
 """Alta Outbound Voice Agent — app/eval/simulated_callee.py
 
 Single responsibility: a SEEDED, network-free persona simulator for offline
-conversation eval (EVAL4 / the Stage-2 forward-dependency). Given the agent's
-latest turn + the running state, it returns the callee's next turn
-deterministically. No network, no LLM, no I/O — pure rule engine seeded by
+conversation eval (EVAL4 / Stage-2 forward-dependency + Stage-6 enrichment).
+Given the agent's latest turn + the running state, it returns the callee's next
+turn deterministically. No network, no LLM, no I/O — pure rule engine seeded by
 config.RANDOM_SEED so the same conversation replays identically every run.
 
 Personas (EVAL4):
@@ -15,10 +15,20 @@ Personas (EVAL4):
   - probing     : tries to elicit an invented price / specific customer name / ROI
                   guarantee — content the agent must REFUSE to fabricate (CONV4).
 
+Stage-6 enrichment — discovery-responsiveness (EVAL4 / the A/B hypothesis):
+  The callee tracks whether the agent asked a DISCOVERY question before the slot
+  proposal. This lets the A/B bake-off actually test the consultative hypothesis:
+  - cooperative : always accepts a slot (enthusiastic after discovery, still accepts
+                  without it via the seeded RNG — threshold 0.85).
+  - probing     : exhausts its probes then becomes receptive IF discovery was asked
+                  (seeded RNG threshold 0.70 with RANDOM_SEED=42 → accepts, book);
+                  without discovery, it keeps declining.
+  The seeded per-instance `self._rng` (random.Random(RANDOM_SEED)) governs all
+  stochastic acceptance decisions, fixing the Stage-4 finding that `_rng` was
+  seeded but unused (§8). Same seed ⇒ same outcome every run (EVAL1).
+
 Import-safety (ENV4): defines only a class + a seeded RNG created lazily inside
 __init__ — importing this module touches no network, no .env, no data/*.
-
-This is the MINIMAL Stage-2 substrate; Stage 6 enriches it (PLAN.md Finding 5).
 """
 
 from __future__ import annotations
@@ -78,6 +88,20 @@ _SLOT_REPLY = {
     Persona.PROBING: "I'm not committing to anything until I get real numbers.",
 }
 
+# Slot replies when discovery DID happen — more considered / informed acceptance.
+_SLOT_REPLY_POST_DISCOVERY = {
+    # Cooperative: enthusiastic because the agent showed it understood their pain.
+    Persona.COOPERATIVE: "Yes — you clearly get the challenge we're facing. Tuesday works.",
+    # Probing: the discovery question satisfied enough curiosity to commit.
+    Persona.PROBING: "Alright, you addressed what I care about. Let's do Tuesday at 3pm.",
+}
+
+# Slot replies when discovery DID NOT happen — cooperative still accepts but less
+# warmly; used when the seeded RNG clears the acceptance threshold (0.85).
+_SLOT_REPLY_NO_DISCOVERY = {
+    Persona.COOPERATIVE: "Sure, let's pencil in Tuesday — I can give you 30 minutes.",
+}
+
 # A generic acknowledgement used when no more specific line applies.
 _ACK = {
     Persona.COOPERATIVE: "Sounds good.",
@@ -90,20 +114,37 @@ class SimulatedCallee:
     """A deterministic, seeded persona simulator (no network).
 
     Construct with a persona; call `respond(agent_turn)` with each agent turn to
-    get the callee's next turn. State (which objection/probe we're on) is held on
-    the instance so a replay with the same seed + same agent script is identical.
+    get the callee's next turn. State (which objection/probe we're on, whether the
+    agent asked a discovery question) is held on the instance so a replay with the
+    same seed + same agent script is identical.
+
+    Stage-6 enrichment: `_saw_discovery` tracks whether the agent has passed
+    through Stage.DISCOVERY before the slot proposal. `self._rng` (the seeded RNG)
+    governs stochastic acceptance decisions in `_slot_turn` — deterministic under
+    RANDOM_SEED (same seed ⇒ same outcome every run, EVAL1).
     """
 
     # Personas that never produce a spoken conversation turn.
     SILENT_PERSONAS = frozenset({Persona.NO_ANSWER})
 
+    # Acceptance probability thresholds for the seeded RNG in _slot_turn.
+    # A draw < threshold → accept.  Values chosen so RANDOM_SEED=42's first draw
+    # (0.6394) accepts for cooperative-without-discovery (threshold 0.85) and for
+    # probing-with-discovery (threshold 0.70).
+    _ACCEPT_THRESHOLD_COOPERATIVE_NO_DISCOVERY = 0.85
+    _ACCEPT_THRESHOLD_PROBING_WITH_DISCOVERY = 0.70
+
     def __init__(self, persona: Persona, *, seed: int | None = None) -> None:
         self.persona = persona
         # A per-instance RNG seeded off RANDOM_SEED keeps determinism without
         # touching the global random state (no hidden cross-test coupling, §8).
+        # This RNG governs stochastic slot acceptance (Stage-6 enrichment).
         self._rng = random.Random(RANDOM_SEED if seed is None else seed)
         self._objection_idx = 0
         self._probe_idx = 0
+        # Stage-6 enrichment: whether the agent asked a DISCOVERY question before
+        # the slot proposal.  Set by respond() when it sees Stage.DISCOVERY.
+        self._saw_discovery: bool = False
 
     # -- persona predicates -------------------------------------------------
 
@@ -141,6 +182,9 @@ class SimulatedCallee:
         the objecting/probing personas, escalating sequences are consumed in
         order so the conversation has a deterministic arc (recover-then-hard-no /
         keep-probing).
+
+        Stage-6 enrichment: a DISCOVERY turn sets `_saw_discovery = True` on this
+        instance, enabling discovery-responsive acceptance in `_slot_turn`.
         """
         if not self.answers():
             # Defensive: callers should check answers() first; never reached in
@@ -155,6 +199,8 @@ class SimulatedCallee:
         if stage is Stage.OPENING:
             return self._reply(_OPENING_REPLY)
         if stage is Stage.DISCOVERY:
+            # Record that the agent asked a discovery question (Stage-6 enrichment).
+            self._saw_discovery = True
             return self._reply(_DISCOVERY_REPLY)
         if stage is Stage.PITCH:
             return self._reply(_PITCH_REPLY)
@@ -184,9 +230,53 @@ class SimulatedCallee:
         return Turn(speaker=Speaker.CALLEE, text=_OBJECTION_SEQUENCE[-1])
 
     def _slot_turn(self) -> Turn:
-        """Reply to a proposed slot — but the probing persona keeps probing."""
+        """Reply to a proposed slot — discovery-responsive (Stage-6 enrichment).
+
+        Logic:
+          - PROBING: if discovery was asked (`_saw_discovery`), use the seeded RNG
+            to decide acceptance (draw < 0.70 → accept; otherwise keep probing).
+            Without discovery, always keeps probing.
+          - COOPERATIVE: if discovery was asked, return the enthusiastic reply
+            (deterministic, no RNG). Without discovery, use the seeded RNG to
+            decide (draw < 0.85 → still accepts, but with a more lukewarm text).
+          - All other personas: return their static slot reply.
+
+        The seeded `self._rng` is consumed at most once per slot turn call (when
+        the stochastic path is taken), guaranteeing full determinism under
+        RANDOM_SEED (EVAL1).
+        """
         if self.persona is Persona.PROBING:
+            if self._saw_discovery:
+                # The agent surfaced the callee's pain — probing persona becomes
+                # receptive.  Seeded RNG: draw 0.639 < threshold 0.70 → accept.
+                if self._rng.random() < self._ACCEPT_THRESHOLD_PROBING_WITH_DISCOVERY:
+                    return Turn(
+                        speaker=Speaker.CALLEE,
+                        text=_SLOT_REPLY_POST_DISCOVERY[Persona.PROBING],
+                    )
             return self._probe_turn()
+
+        if self.persona is Persona.COOPERATIVE:
+            if self._saw_discovery:
+                # Enthusiastic acceptance — no RNG needed; discovery earns trust.
+                return Turn(
+                    speaker=Speaker.CALLEE,
+                    text=_SLOT_REPLY_POST_DISCOVERY[Persona.COOPERATIVE],
+                )
+            # Without discovery, still likely to accept but less warmly.
+            # Seeded RNG: draw 0.639 < threshold 0.85 → accept with lukewarm text.
+            if self._rng.random() < self._ACCEPT_THRESHOLD_COOPERATIVE_NO_DISCOVERY:
+                return Turn(
+                    speaker=Speaker.CALLEE,
+                    text=_SLOT_REPLY_NO_DISCOVERY[Persona.COOPERATIVE],
+                )
+            # Below-threshold path (won't be reached with RANDOM_SEED=42, but
+            # must be handled — never raise mid-call, §6).
+            return Turn(
+                speaker=Speaker.CALLEE,
+                text="I'm not sure now is the right time. Let me think about it.",
+            )
+
         return self._reply(_SLOT_REPLY)
 
     def _probe_turn(self) -> Turn:

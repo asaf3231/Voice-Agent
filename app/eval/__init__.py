@@ -26,8 +26,10 @@ class Speaker(str, Enum):
 class Stage(str, Enum):
     """The dialog state-machine stages (CONV1).
 
-    Linear happy path: PITCH → DISCOVERY → OBJECTION → PROPOSE_SLOT → CLOSE.
-    DONE is the terminal sink once the call has ended.
+    Happy path (variant-dependent):
+        OPENING → {A: DISCOVERY → PITCH | B: PITCH} → OBJECTION* → PROPOSE_SLOT → CLOSE → DONE.
+    DONE is the terminal sink once the call has ended. OBJECTION* means zero or
+    more objection-recovery exchanges can interleave before PROPOSE_SLOT.
     """
 
     OPENING = "opening"          # the disclosure utterance

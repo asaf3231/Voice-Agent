@@ -44,7 +44,7 @@ Status values: ⬜ Not started · 🔄 In progress · 🟡 Awaiting verification
 | 3 | Agent callable functions + booking | `TOOL1`–`TOOL5`, `BOOK1`–`BOOK3` | ✅ | ✅ Complete (2026-06-23, 201 green; OQ-VOICE-3 resolved) |
 | 4 | Voice-platform integration (Vapi + Realtime + webhooks) | `VOICE1`–`VOICE5`, `CON2`–`CON3` | ✅ | ✅ Complete (2026-06-23, **251 green**; offline scope — public-tunnel live smoke owed at Stage 8; **2 HIGH post-commit gate findings fixed** — see footer) |
 | 5 | Outbound orchestration + consent + budget guard | `CALL1`–`CALL4`, `CON1`, `CON4`, `CON5`, `SEC3` | ✅ | ✅ Complete (2026-06-23, 287 green; **independent** reviewer gate → APPROVE) |
-| 6 | Offline evaluation harness | `EVAL1`–`EVAL6` | — | ⬜ Not started |
+| 6 | Offline evaluation harness | `EVAL1`–`EVAL6` | — | ✅ Complete (2026-06-23, 335 green; A/B re-run flipped winner **B→A**, persona-lock awaiting Asaf) |
 | 7 | Anti-leakage & packaging hardening | `LEAK1`–`LEAK5`, `PKG1`–`PKG4` | ✅ | ⬜ Not started |
 | 8 | Live calling (lean) + receipts | `LIVE1`–`LIVE4`, `SEC5` | — | ⬜ Not started |
 | 9 | Video explanation + demo script | `VID1`–`VID3` | — | ⬜ Not started |
@@ -200,7 +200,14 @@ core that produces the numbers shown in the video.
 - [ ] `EVAL1`/`EVAL2` — deterministic, offline, seeded; scores **computed**, never hardcoded.
 - [ ] `EVAL3`/`EVAL4` — rubric covers disclosure/pitch/objection/booking/compliance; persona matrix yields expected dispositions.
 - [ ] `EVAL5`/`EVAL6` — reproducible aggregate metrics; negative fixtures catch disclosure/booking regressions.
-**Status:** ⬜ Not started · **Reviewer gate:** — (pure eval).
+**Status:** ✅ Complete (offline; PM-verified 2026-06-23 — **335 green**, deterministic across two runs; `app/eval/harness.py`
+[persona-matrix runner + aggregate metrics + labeled fixtures], enriched `simulated_callee` [discovery-responsiveness via
+the seeded `_rng`], `tests/test_eval.py` [48 tests, EVAL1–EVAL6 incl. negative regression fixtures]; PM re-ran the bake-off
+and reproduced the table exactly; 3 carry-forward eval findings closed [`_find_invented_claim` dead param, `_rng` unused,
+`__init__` docstring]; no graded contract changed). · **Reviewer gate:** — (pure eval; PM QA suffices).
+**⚠ Open decision (Asaf):** the enriched A/B re-run **flipped the winner B→A** (A book-rate 0.4 vs B 0.2; ties on
+disclosure/objection/compliance; A +0.8 avg turns). PM recommends **locking A**; not auto-flipped (changes the live demo
+persona). Must be locked into `build_system_prompt`/`configure_assistant` defaults before Stage 8.
 
 ---
 
@@ -261,13 +268,13 @@ Do not mark a stage complete if its QA checks were only drafted but not run.
 - **Status:** **Stages 0–5 ✅ (all offline, PM-verified & committed).** Running the **autonomous loop** (commit +
   auto-advance per stage; halt only on the 3 triggers + Stage 8/9 coordination). Commits: `05cfee4` (spine) ·
   `1bef4e7` (`v1.0.0-stage1`) · `f867207` (Stage 2 A/B) · `405a083` (Stage 3 tools + booking; OQ-VOICE-3 resolved) ·
-  `013c395` (Stage 4) · `85b2a4b` (Stage 4 HIGH-findings fix) · Stage 5 (orchestration + consent + budget guard).
-  **287 tests green.** **Reviewer process corrected after the Stage-4 miss:** contract-touching stages now get a
-  genuinely **independent** cold reviewer pass (not PM-inline) before ✅/commit — Stage 5 passed it (verdict APPROVE;
-  2 MINOR findings fixed: a dead import [§8] + a trivially-passing retry-guard test). **Carry-forward:** Stage-6 must
-  enrich `simulated_callee` + re-run the A/B (winner **B** provisional) and clear 3 minor eval findings
-  (`_find_invented_claim`/`_rng`/`__init__`-docstring); the Stage-4 public-tunnel live webhook smoke test is owed at
-  Stage 8. `LIVE0` provisioning owned by Asaf (not a code gate).
+  `013c395` (Stage 4) · `85b2a4b` (Stage 4 HIGH-findings fix) · `1a99726` (Stage 5 orchestration) · Stage 6 (offline
+  eval harness). **335 tests green.** **Reviewer process corrected after the Stage-4 miss:** contract-touching stages
+  get a genuinely **independent** cold reviewer pass (not PM-inline) before ✅/commit (Stage 5 passed APPROVE). **Stage 6
+  discharged the carry-forward** (enriched `simulated_callee`, re-ran the A/B, closed the 3 eval findings). **⚠ Open
+  decision:** the enriched A/B **flipped the persona winner B→A** (A books 2×); PM recommends locking **A** — awaiting
+  Asaf; must land before Stage 8. The Stage-4 public-tunnel live webhook smoke test is owed at Stage 8. `LIVE0`
+  provisioning owned by Asaf (not a code gate).
 - **Decisions locked:** service-only repo (no notebook); Vapi (Retell-swappable); OpenAI Realtime brain;
   lean live calling under a hard $50 cap; secrets+PII+fabricated-outcomes are the anti-leakage core;
   **operating model — `general-purpose` executers + native `/code-review` & `/security-review` gates;
@@ -275,10 +282,8 @@ Do not mark a stage complete if its QA checks were only drafted but not run.
 - **Open questions:** all four **✅ resolved 2026-06-23** (NOTES) — `OQ-VOICE-1` `REALTIME_MODEL =
   "gpt-4o-realtime-preview"`; `OQ-VOICE-2` **Vapi** primary + mandatory adapter (Retell-ready);
   `OQ-VOICE-3` **Cal.com API** + deterministic local mock; `OQ-VOICE-4` **3** consented tester numbers.
-- **Next action:** **Stage 6 — Offline evaluation harness** (`app/eval/harness.py` + enrich `rubric.py` &
-  `simulated_callee.py`; `tests/test_eval.py`; `EVAL1`–`EVAL6`) under the autonomous loop. This stage also discharges
-  the **carry-forward**: enrich `simulated_callee` so discovery-responsiveness is modeled, **re-run the A/B bake-off**
-  (winner **B** is provisional) and lock the persona, and clear the 3 minor eval findings
-  (`rubric._find_invented_claim` dead `claims` param + docstring; `simulated_callee._rng` unused; `eval/__init__`
-  stage-order docstring). Pure-eval ⇒ no reviewer gate (PM's own QA suffices), but scores must stay **computed, never
-  hardcoded** (`EVAL2`/`LEAK4`).
+- **Next action:** **(decision)** Asaf to confirm the **persona lock A** (the enriched A/B flipped B→A); then **Stage 7
+  — Anti-leakage & packaging hardening** (`LEAK1`–`LEAK5`, `PKG1`–`PKG4`) under the autonomous loop — the highest-leverage
+  gate before live, which additionally runs the native **`/security-review`** utility (CLAUDE.md §1.3) on this
+  PII/secret-handling system. The persona lock is not a prerequisite for Stage 7 (only for Stage 8), so Stage 7 can
+  proceed in parallel with that decision.

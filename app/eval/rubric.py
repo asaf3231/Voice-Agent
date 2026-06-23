@@ -212,15 +212,20 @@ def _compute_objection_handled(transcript: list[Turn]) -> bool:
     return not saw_objection
 
 
-def _find_invented_claim(
-    transcript: list[Turn], claims: frozenset[str]
-) -> bool:
-    """True iff an agent turn voices a fabricated price/ROI/customer claim.
+def _find_invented_claim(transcript: list[Turn]) -> bool:
+    """True iff an agent turn voices a numeric claim the agent must not fabricate.
 
-    The agent may NOT improvise pricing, ROI guarantees, or customer names
-    (the file's "What Alta does NOT claim"). We flag an agent turn that emits a
-    dollar amount, a percentage, or an 'Nx' multiple — those numeric claims are
-    never grounded in the value-prop file, so any such utterance is invented.
+    The agent may NOT improvise pricing, ROI guarantees, or 'Nx' multipliers
+    (the value-prop file's "What Alta does NOT claim" section). We flag any agent
+    turn that contains a dollar figure, a percentage, or an 'Nx' multiple — these
+    patterns are never present in the allowed value-prop facts, so any such
+    utterance is an invented/ungrounded claim.
+
+    Note: this function flags by SHAPE (numeric claim patterns), not by diffing
+    against the value-prop keyword set — that is a deliberate, honest design.
+    The value-prop keywords are used by pitch_delivered (grounding the pitch);
+    here we flag the FORBIDDEN patterns (price/ROI/multiple) that the file
+    explicitly forbids, independent of what the agent might have been allowed to say.
     """
     for t in _agent_turns(transcript):
         text = t.text
@@ -251,7 +256,7 @@ def _compute_compliance_ok(
 ) -> bool:
     """True iff no invented claim, failsafe is byte-exact when used, and no booking
     is voiced without a booked=True turn (no phantom confirmation — Policy 5/6)."""
-    if _find_invented_claim(transcript, claims):
+    if _find_invented_claim(transcript):
         return False
 
     # If any agent turn uses the failsafe close, it must be byte-exact.

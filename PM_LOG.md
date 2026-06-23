@@ -397,3 +397,15 @@ do_not_call=False, allowlist=None)`, `budget.budget_permits(projected, *, is_liv
 Plan: write `briefs/stage-5.md` → spawn ONE cold `general-purpose` executer (Stage 5 only) → PM-verify
 `CALL1`–`CALL4`/`CON1`/`CON4`/`CON5`/`SEC3` by running them → **independent reviewer gate** (consent chokepoint + budget
 guard + second-entry-point spy + import-safety) → commit → advance to Stage 6. Halt only on the 3 triggers.
+
+## 2026-06-23 ~19:55 — [VOICE] PROGRESS (mid-session; Stage 5 ✅ committed, Stage 6 in flight)
+**Stage 5 ✅ COMPLETE + COMMITTED** `1a99726`. Executer built it; PM-verified (287 green; ENV4 8 modules; no graded
+contract touched); **first genuinely independent cold reviewer gate → APPROVE** (chokepoint clean in both entry points;
+2 MINOR findings PM-fixed before commit: a §8 dead import + a trivially-passing retry-guard test rewritten to actually
+prove the guard). Ledger updated (PLAN Stage 5 ✅ + footer; NOTES handback + verified facts). **Now advancing to Stage 6
+— Offline evaluation harness** (`briefs/stage-6.md` written; spawning the cold executer). Stage 6 is pure-eval (no
+reviewer gate) but discharges the carry-forward: enrich `simulated_callee` (discovery-responsiveness; also fixes the
+`_rng`-unused finding), build `harness.py` + `tests/test_eval.py` (EVAL1–6), fix `rubric._find_invented_claim` dead
+param + `eval/__init__` docstring, and **re-run the A/B bake-off** (executer reports the table; PM adjudicates the
+persona lock — do not let the executer flip `build_system_prompt`'s default). If this session crashes mid-Stage-6:
+Stage 5 is safely committed at `1a99726`; resume by checking disk for uncommitted `app/eval/harness.py` + `tests/test_eval.py`.
