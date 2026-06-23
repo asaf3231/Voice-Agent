@@ -205,9 +205,9 @@ core that produces the numbers shown in the video.
 the seeded `_rng`], `tests/test_eval.py` [48 tests, EVAL1–EVAL6 incl. negative regression fixtures]; PM re-ran the bake-off
 and reproduced the table exactly; 3 carry-forward eval findings closed [`_find_invented_claim` dead param, `_rng` unused,
 `__init__` docstring]; no graded contract changed). · **Reviewer gate:** — (pure eval; PM QA suffices).
-**⚠ Open decision (Asaf):** the enriched A/B re-run **flipped the winner B→A** (A book-rate 0.4 vs B 0.2; ties on
-disclosure/objection/compliance; A +0.8 avg turns). PM recommends **locking A**; not auto-flipped (changes the live demo
-persona). Must be locked into `build_system_prompt`/`configure_assistant` defaults before Stage 8.
+**✅ Decision RESOLVED (Asaf 2026-06-23):** persona **LOCKED = A (Consultative)** — the enriched A/B gave A a 2× book-rate.
+The live default `variant` is now "A" in `build_system_prompt` + `configure_assistant` (+ conftest fake + docstrings);
+suite stays **335 green**; both variants remain available via `build_policy` (reversible). Not a graded-contract change.
 
 ---
 
@@ -271,10 +271,10 @@ Do not mark a stage complete if its QA checks were only drafted but not run.
   `013c395` (Stage 4) · `85b2a4b` (Stage 4 HIGH-findings fix) · `1a99726` (Stage 5 orchestration) · Stage 6 (offline
   eval harness). **335 tests green.** **Reviewer process corrected after the Stage-4 miss:** contract-touching stages
   get a genuinely **independent** cold reviewer pass (not PM-inline) before ✅/commit (Stage 5 passed APPROVE). **Stage 6
-  discharged the carry-forward** (enriched `simulated_callee`, re-ran the A/B, closed the 3 eval findings). **⚠ Open
-  decision:** the enriched A/B **flipped the persona winner B→A** (A books 2×); PM recommends locking **A** — awaiting
-  Asaf; must land before Stage 8. The Stage-4 public-tunnel live webhook smoke test is owed at Stage 8. `LIVE0`
-  provisioning owned by Asaf (not a code gate).
+  discharged the carry-forward** (enriched `simulated_callee`, re-ran the A/B, closed the 3 eval findings). **Persona
+  LOCKED = A** (Asaf 2026-06-23; the enriched A/B flipped B→A, A books 2×; live default now "A", suite still 335 green).
+  The Stage-4 public-tunnel live webhook smoke test is owed at Stage 8. `LIVE0` provisioning owned by Asaf (not a code
+  gate).
 - **Decisions locked:** service-only repo (no notebook); Vapi (Retell-swappable); OpenAI Realtime brain;
   lean live calling under a hard $50 cap; secrets+PII+fabricated-outcomes are the anti-leakage core;
   **operating model — `general-purpose` executers + native `/code-review` & `/security-review` gates;
@@ -282,8 +282,7 @@ Do not mark a stage complete if its QA checks were only drafted but not run.
 - **Open questions:** all four **✅ resolved 2026-06-23** (NOTES) — `OQ-VOICE-1` `REALTIME_MODEL =
   "gpt-4o-realtime-preview"`; `OQ-VOICE-2` **Vapi** primary + mandatory adapter (Retell-ready);
   `OQ-VOICE-3` **Cal.com API** + deterministic local mock; `OQ-VOICE-4` **3** consented tester numbers.
-- **Next action:** **(decision)** Asaf to confirm the **persona lock A** (the enriched A/B flipped B→A); then **Stage 7
-  — Anti-leakage & packaging hardening** (`LEAK1`–`LEAK5`, `PKG1`–`PKG4`) under the autonomous loop — the highest-leverage
-  gate before live, which additionally runs the native **`/security-review`** utility (CLAUDE.md §1.3) on this
-  PII/secret-handling system. The persona lock is not a prerequisite for Stage 7 (only for Stage 8), so Stage 7 can
-  proceed in parallel with that decision.
+- **Next action:** **Stage 7 — Anti-leakage & packaging hardening** (`LEAK1`–`LEAK5`, `PKG1`–`PKG4`) under the autonomous
+  loop — the highest-leverage gate before live. It runs the native **`/security-review`** utility (CLAUDE.md §1.3) on this
+  PII/secret-handling system AND a genuinely independent reviewer pass (contract-adjacent: packaging/gitignore). Persona
+  lock **A** is done. Then Stage 8 (live, coordinate with Asaf + `LIVE0`) and Stage 9 (video).

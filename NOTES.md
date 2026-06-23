@@ -495,4 +495,15 @@ winner** (exactly the data-driven call Stage 2 was designed to make). Locking A 
 `variant="B"→"A"` in `persona.build_system_prompt` + `vapi_client.configure_assistant` (+ conftest fake default +
 docstrings) — it changes the **live demo persona** (the video), so per "surface decisions, don't bury them" the PM did
 **NOT** auto-flip it inside the Stage-6 commit. **Recommendation: lock A.** Not blocking Stage 7 (anti-leakage/packaging
-doesn't depend on the persona); must be locked before Stage 8 (live). Awaiting Asaf's confirm.
+doesn't depend on the persona); must be locked before Stage 8 (live).
+
+### 2026-06-23 — Persona LOCKED = Variant A (Consultative / discovery-led)  *(Asaf — confirmed the computed winner)*
+**Decision:** Asaf confirmed **lock A**. The live default `variant` is now **"A"** in `persona.build_system_prompt`,
+`vapi_client.VoiceProvider.configure_assistant` + `VapiVoiceProvider.configure_assistant` (and the conftest
+`FakeVoiceProvider`), plus docstrings + the `_VARIANT_PROMPT_GUIDANCE` fallback. `build_policy` already defaulted to A.
+**Reason:** the enriched Stage-6 A/B re-run gave A a **2× book-rate (0.4 vs 0.2)**, tying on disclosure/objection/
+compliance, at ~0.8 more avg turns — well within caps. Data-driven, exactly the call Stage 2 designed. **Both variants
+stay available via `build_policy("A"|"B")` — reversible.** **Impact:** PM-verified the suite stays **335 green** after
+the flip (no test depended on B-as-default); `configure_assistant()` now emits `metadata.variant == "A"`. This is NOT a
+graded-contract change (the default variant is product config, not a §9 constant/literal). Stage-6 open decision →
+**RESOLVED**.

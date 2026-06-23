@@ -452,7 +452,7 @@ _VARIANT_PROMPT_GUIDANCE: dict[str, str] = {
 
 
 def build_system_prompt(
-    variant: str = "B",
+    variant: str = "A",
     value_prop: ValueProp | None = None,
     *,
     value_prop_path: Path | str | None = None,
@@ -470,7 +470,9 @@ def build_system_prompt(
     chokepoint — see app/vapi_client.py); restating it here is belt-and-suspenders,
     not the enforcement point (Red-Team Finding 4 / CON2).
 
-    Default variant is the provisional winner "B" but it stays a parameter.
+    Default variant is the LOCKED winner "A" (Consultative / discovery-led) —
+    the enriched Stage-6 A/B re-run gave A a 2x book-rate over B, tying on
+    disclosure/objection/compliance (NOTES 2026-06-23). It stays a parameter.
 
     Args:
         variant:           "A" or "B" — selects the ordering guidance.
@@ -492,7 +494,7 @@ def build_system_prompt(
     ) or "  - (no scripted objection responses provided)"
 
     guidance = _VARIANT_PROMPT_GUIDANCE.get(
-        variant.upper(), _VARIANT_PROMPT_GUIDANCE["B"]
+        variant.upper(), _VARIANT_PROMPT_GUIDANCE["A"]
     )
 
     return (

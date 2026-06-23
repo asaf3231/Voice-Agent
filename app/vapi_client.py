@@ -94,7 +94,7 @@ class VoiceProvider(Protocol):
     def configure_assistant(
         self,
         *,
-        variant: str = "B",
+        variant: str = "A",
         value_prop_path: str | None = None,
     ) -> dict[str, Any]:
         """Build the provider assistant payload (pure builder; no network)."""
@@ -263,7 +263,7 @@ class VapiVoiceProvider:
     def configure_assistant(
         self,
         *,
-        variant: str = "B",
+        variant: str = "A",
         value_prop_path: str | None = None,
     ) -> dict[str, Any]:
         """Build the Vapi assistant payload (VOICE1 / CON2 / CON3).

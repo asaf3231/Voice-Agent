@@ -160,7 +160,7 @@ class FakeVoiceProvider:
     def configure_assistant(
         self,
         *,
-        variant: str = "B",
+        variant: str = "A",
         value_prop_path: str | None = None,
     ) -> dict[str, Any]:
         """Build the assistant payload via the real (offline, pure) Vapi builder."""
