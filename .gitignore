@@ -1,0 +1,28 @@
+# --- secrets & environment (NEVER commit) ---
+.env
+.env.*
+!.env.example
+
+# --- the assignment email (carried the provided card number; redacted, but never track it) ---
+Home_Assignment_email.md
+
+# --- reference material (unaudited; may carry other-project secrets/PII) ---
+REFERENCE/
+
+# --- consent allowlist (untracked per CLAUDE.md §5 Policy 2) ---
+consent_allowlist.*
+allowlist.*
+
+# --- real call artifacts & raw receipts (PII / cost evidence) ---
+recordings/
+transcripts/
+receipts/raw/
+*.wav
+*.mp3
+
+# --- python / venv / tooling ---
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
