@@ -294,3 +294,53 @@ identity (`TOOL_REGISTRY` == `AGENT_TOOLS`); literals + `CalendarProvider` signa
 booking / masked dispositions read-verified in both modules. No graded contract changed; no DECISION-NEEDED. Reviewer
 gate PM-inline → clean. Committed on `main`. **OQ-VOICE-3 resolved** (Cal.com behind `CalendarProvider` + local mock
 default). Advancing to **Stage 4 — Voice-platform integration** under the loop.
+
+## 2026-06-23 19:16 — [VOICE] SESSION START (recovery — prior session crashed after the Stage-4 executer finished)
+Picking up: **Stage 4 — Voice-platform integration (Vapi + Realtime + webhooks)**, the first non-✅ stage
+(Stages 0–3 ✅, committed `05cfee4` / `1bef4e7` / `f867207` / `405a083`). Read order completed this session:
+`PM_Methodology_Prompt.md` (verbatim) → latest `PM_LOG.md` entry (18:55 Stage-3 complete) → `CLAUDE.md` →
+`PLAN.md` → `QA_checklist.md` → `NOTES.md` → `ORCHESTRATION.md`, then the Stage-4 brief + handback + on-disk state.
+**Anomaly / recovery context (verified against disk, not the ledger):** the 18:45 (Stage-3→4) session spawned the
+Stage-4 executer, which **ran to completion and wrote `handbacks/stage-4.md` at 19:00** (claims **245 passed/0
+failed**, no graded contract changed, **no DECISION-NEEDED**), but the PM session then **died before** PM-verification,
+the `/code-review` gate, the commit, the PLAN/NOTES updates, and any SESSION END entry. So the true state is:
+**Stage-4 code on disk + executer handback written, but PM-unverified, unreviewed, uncommitted, unlogged** — `git log`
+tops out at the Stage-3 baseline `405a083`; Stage-4 files are untracked (`app/server.py`, `app/vapi_client.py`,
+`tests/test_server.py`, `tests/test_voice.py`) with `app/persona.py` / `tests/conftest.py` / `tests/test_env.py`
+modified. `PLAN.md` still marks Stage 4 ⬜ Not started (reflects ledger lag, not work done).
+State as read (to re-verify against running code): Stages 0–3 ✅; all 4 OQs ✅; operating model = autonomous loop
+("Executer builds, PM verifies"), `/code-review` on contract stages, PM re-runs QA itself; autonomous commit+
+auto-advance cadence granted 18:45 (halt only on the 3 triggers + Stage 8/9 coordination).
+Plan for this session (recovery is PM-led verification of existing on-disk work — no fresh executer respawn, per the
+budget rule): (1) run the full offline suite for ground-truth pass/fail; (2) re-prove ENV4 import-safety now covering
+`app.server` + `app.vapi_client` (lazy singletons `None`, httpx not pulled); (3) PM-verify the Stage-4 QA IDs
+(`VOICE1`–`VOICE5`, `CON2`–`CON3`) + both literals byte-exact + the disclosure pinned to the static first-message;
+(4) run the **`/code-review`** gate (contract-touching: `VoiceProvider` interface + webhook signature auth +
+import-safety); (5) append the Stage-4 handback to `NOTES.md`, mark `PLAN.md` Stage 4 ✅, commit the Stage-4 baseline;
+(6) write a SESSION END / HANDOFF before stopping. Carry forward the Stage-6 bake-off re-run + the public-tunnel live
+smoke test (gated, Asaf's `LIVE0` track).
+
+## 2026-06-23 19:16 — [VOICE] SESSION END / HANDOFF (Stage 4 recovered, verified, reviewed, committed)
+Did: Recovered the crashed Stage-4 session **PM-led, no executer respawn** (verification-only — budget rule). The
+executer's on-disk work was complete + its handback written; this session did the PM half. **PM-verified (run, not the
+executer's word):** full suite **245 passed / 0 failed** (deterministic); ENV4 import-safe across **all 7 app modules**
+from an empty cwd (httpx not pulled, both lazy singletons `None`); both graded literals byte-exact == CLAUDE.md §9 and
+identity-equal to config; `VoiceProvider` 3 graded signatures intact; `DISCLOSURE_LINE` pinned to the static
+`firstMessage` byte-exact + recording gated (CON3); webhook `verify_signature` HMAC-over-raw-body, constant-time,
+**fails closed** (VOICE2); dispatch structured-error safe (VOICE3); diff additive, no graded contract changed. Ran the
+**`/code-review`** gate PM-inline (contract-touching) → **APPROVE**, 2 LOW non-blocking live-carry findings. Updated
+`PLAN.md` (Stage 4 → ✅, footer, next-action → Stage 5) + `NOTES.md` (verified-facts + handback). **Committed** the
+Stage-4 baseline on `main`.
+Verified numbers (PM-run): **245 passed / 0 failed**; ENV4 clean; literals byte-exact; `REALTIME_MODEL =
+gpt-4o-realtime-preview`.
+Status now: ✅ **Stage 4 COMPLETE (offline scope), PM-verified, reviewer-gate-clean, committed.** Stages 0–4 all ✅.
+Paused at the Stage-4 boundary (kickoff + crash-recovery) to surface the recovery before the next cold spawn — NOT a
+halt trigger.
+Next PM should: **Stage 5 — Outbound orchestration + consent + budget guard** (`app/orchestrate.py`; `CALL1`–`CALL4`,
+`CON1`, `CON4`, `CON5`, `SEC3`) under the autonomous loop — brief + spawn one cold `general-purpose` executer, then
+PM-verify + `/code-review` (consent chokepoint + budget guard). The `SEC3`/`CON1` **second-entry-point spy** on
+`scripts/place_demo_call.py` lands here. On Asaf's "run the loop" / "continue", proceed without further gating.
+Watch out for / open: **recurring mid-stage session crashes** — each stage's executer work has survived on disk + its
+handback, recoverable PM-led, but watch for an uncommitted-work gap on resume (always re-verify disk vs the ledger).
+Carry-forward: Stage-6 `simulated_callee` enrichment + A/B re-run (winner **B** provisional); Stage-4 public-tunnel live
+webhook smoke owed at Stage 8; `LIVE0` provisioning is Asaf's parallel track + #1 schedule risk.

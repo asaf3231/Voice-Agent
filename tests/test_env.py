@@ -170,14 +170,37 @@ class TestEnv4ImportSafety:
         cc.reset_calendar()
         assert cc._calendar is None, "live calendar singleton must be None at import"
 
+    def test_stage4_modules_importable_singleton_none(self, monkeypatch):
+        """ENV4 (Stage 4): app.server + app.vapi_client import side-effect free.
+
+        The live Vapi client singleton must be None at import (built lazily only
+        via _get_vapi(), never eagerly — VOICE4 / CON4). Importing app.server must
+        NOT read .env, build a client, or open a lifespan resource.
+        """
+        for key in ["VAPI_API_KEY", "VAPI_PHONE_NUMBER_ID", "VAPI_WEBHOOK_SECRET",
+                    "OPENAI_API_KEY", "CALCOM_API_KEY", "CONSENT_ALLOWLIST_PATH"]:
+            monkeypatch.delenv(key, raising=False)
+        import app.vapi_client as vc
+        import app.server  # noqa: F401
+        vc.reset_vapi()
+        assert vc._vapi is None, "live Vapi client singleton must be None at import"
+
     def test_import_subprocess_no_env(self):
-        """Run import in a clean subprocess with no .env — must exit 0."""
+        """Run import in a clean subprocess with no .env — must exit 0.
+
+        Covers the full six-module ENV4 set (CLAUDE.md §1: config, server, tools,
+        orchestrate, budget, consent) PLUS vapi_client + calendar_client — every
+        lazy singleton None at import. orchestrate.py lands at Stage 5; until then
+        the spec's six-module line is satisfied by the modules that exist.
+        """
         result = subprocess.run(
             [sys.executable, "-c",
-             "import app.config, app.budget, app.consent, app.tools, app.calendar_client; "
+             "import app.config, app.budget, app.consent, app.tools, "
+             "app.calendar_client, app.vapi_client, app.server; "
              "import app.budget as b; b.reset_ledger(); assert b._ledger is None; "
              "import app.consent as c; c.reset_allowlist(); assert c._allowlist is None; "
-             "import app.calendar_client as cal; cal.reset_calendar(); assert cal._calendar is None"],
+             "import app.calendar_client as cal; cal.reset_calendar(); assert cal._calendar is None; "
+             "import app.vapi_client as v; v.reset_vapi(); assert v._vapi is None"],
             capture_output=True,
             text=True,
             cwd=str(REPO_ROOT),

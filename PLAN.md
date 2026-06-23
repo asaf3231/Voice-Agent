@@ -42,7 +42,7 @@ Status values: ⬜ Not started · 🔄 In progress · 🟡 Awaiting verification
 | 1 | Environment, secrets, budget & synthetic inputs | `ENV1`–`ENV4`, `SEC1`–`SEC4`, `LEAD1`–`LEAD3` | ✅ | ✅ Complete (2026-06-23, 105 green; offline scope — `LIVE0` Asaf-parallel) |
 | 2 | Conversation design (persona, dialog policy, literals) | `CONV1`–`CONV6` | ✅ | ✅ Complete (2026-06-23, 150 green; winner **B** provisional pending Stage-6 re-run) |
 | 3 | Agent callable functions + booking | `TOOL1`–`TOOL5`, `BOOK1`–`BOOK3` | ✅ | ✅ Complete (2026-06-23, 201 green; OQ-VOICE-3 resolved) |
-| 4 | Voice-platform integration (Vapi + Realtime + webhooks) | `VOICE1`–`VOICE5`, `CON2`–`CON3` | ✅ | ⬜ Not started |
+| 4 | Voice-platform integration (Vapi + Realtime + webhooks) | `VOICE1`–`VOICE5`, `CON2`–`CON3` | ✅ | ✅ Complete (2026-06-23, 245 green; offline scope — public-tunnel live smoke owed at Stage 8) |
 | 5 | Outbound orchestration + consent + budget guard | `CALL1`–`CALL4`, `CON1`, `CON4`, `CON5`, `SEC3` | ✅ | ⬜ Not started |
 | 6 | Offline evaluation harness | `EVAL1`–`EVAL6` | — | ⬜ Not started |
 | 7 | Anti-leakage & packaging hardening | `LEAK1`–`LEAK5`, `PKG1`–`PKG4` | ✅ | ⬜ Not started |
@@ -164,7 +164,16 @@ opener, and the 5 tools) and the signature-verified FastAPI webhook server — i
 - [ ] `VOICE2`/`VOICE3` — webhook signature verified; tool dispatch routes correctly; unknown tool → structured error. **Deliverable: a public HTTPS webhook tunnel (ngrok/Cloudflare/deployed host) + one signed end-to-end webhook smoke test over the public URL** (Red-Team 2026-06-23, Finding 3 — `make serve` on localhost is unreachable by Vapi).
 - [ ] `VOICE4`/`VOICE5` — lazy client (`ENV4` holds); the provider interface is the only egress, swappable.
 - [ ] `CON2`/`CON3` — disclosure is the **static first-message** (verbatim, byte-exact), not a prompt the model may paraphrase; recording gated on disclosure; `LIVE2` later verifies from the real transcript.
-**Status:** ⬜ Not started · **Reviewer gate:** ✅ (provider interface + webhook auth + import-safety). `OQ-VOICE-2` **locked: Vapi** primary, **Adapter Pattern mandatory** — `VoiceProvider` is the only egress, swapping to Retell must touch **no** core state/dialog logic (`VOICE5`).
+**Status:** ✅ Complete (offline; PM-verified 2026-06-23 19:16 recovery — **245 green**; `VoiceProvider` adapter
+[graded signatures intact] + `VapiVoiceProvider` [pure offline builder + lazy httpx live methods]; signature-verified
+FastAPI webhooks [HMAC-SHA256 over raw body, fail-closed]; `DISCLOSURE_LINE` pinned to the static `firstMessage`
+byte-exact + recording gated [CON3]; ENV4 import-safe across all 7 modules, httpx not pulled; both literals byte-exact
+== §9 from config; no graded contract changed). Recovered PM-led from a prior session's mid-stage crash (executer had
+finished + written `handbacks/stage-4.md`; PM did the verify/review/commit/log). · **Reviewer gate:** ✅ (PM-inline,
+per the no-cold-spawn budget rule; provider interface + webhook auth + import-safety — APPROVE, 2 LOW live-carry
+findings). `OQ-VOICE-2` **locked: Vapi** primary, **Adapter Pattern mandatory** — `VoiceProvider` is the only egress,
+swapping to Retell must touch **no** core state/dialog logic (`VOICE5`). **Owed at Stage 8:** the public-HTTPS-tunnel
+signed end-to-end webhook smoke test (gated, Asaf's `LIVE0` track).
 
 ---
 
@@ -249,11 +258,14 @@ Do not mark a stage complete if its QA checks were only drafted but not run.
 ---
 
 ## Current project state
-- **Status:** **Stages 0–3 ✅ (all offline, PM-verified & committed).** Running the **autonomous loop** (commit +
+- **Status:** **Stages 0–4 ✅ (all offline, PM-verified & committed).** Running the **autonomous loop** (commit +
   auto-advance per stage; halt only on the 3 triggers + Stage 8/9 coordination). Commits: `05cfee4` (spine) ·
-  `1bef4e7` (`v1.0.0-stage1`) · `f867207` (Stage 2 A/B) · Stage 3 (tools + booking; OQ-VOICE-3 resolved). **201
-  tests green.** **Carry-forward:** Stage-6 must enrich `simulated_callee` + re-run the A/B (winner **B** is
-  provisional) and clear 2 minor eval findings. `LIVE0` provisioning owned by Asaf (not a code gate).
+  `1bef4e7` (`v1.0.0-stage1`) · `f867207` (Stage 2 A/B) · `405a083` (Stage 3 tools + booking; OQ-VOICE-3 resolved) ·
+  Stage 4 (Vapi adapter + Realtime assistant + signature-verified webhooks). **245 tests green.** Stage 4 was
+  **recovered PM-led** from a prior session's mid-stage crash (executer finished + wrote its handback; this session
+  did verify/review/commit/log). **Carry-forward:** Stage-6 must enrich `simulated_callee` + re-run the A/B (winner
+  **B** is provisional) and clear 2 minor eval findings; the Stage-4 public-tunnel live webhook smoke test is owed at
+  Stage 8. `LIVE0` provisioning owned by Asaf (not a code gate).
 - **Decisions locked:** service-only repo (no notebook); Vapi (Retell-swappable); OpenAI Realtime brain;
   lean live calling under a hard $50 cap; secrets+PII+fabricated-outcomes are the anti-leakage core;
   **operating model — `general-purpose` executers + native `/code-review` & `/security-review` gates;
@@ -261,7 +273,9 @@ Do not mark a stage complete if its QA checks were only drafted but not run.
 - **Open questions:** all four **✅ resolved 2026-06-23** (NOTES) — `OQ-VOICE-1` `REALTIME_MODEL =
   "gpt-4o-realtime-preview"`; `OQ-VOICE-2` **Vapi** primary + mandatory adapter (Retell-ready);
   `OQ-VOICE-3` **Cal.com API** + deterministic local mock; `OQ-VOICE-4` **3** consented tester numbers.
-- **Next action:** **Stage 4 — Voice-platform integration** (Vapi adapter + OpenAI Realtime assistant config with
-  `DISCLOSURE_LINE` as the static first-message + signature-verified FastAPI webhooks; `VOICE1`–`VOICE5`,
-  `CON2`–`CON3`) under the autonomous loop; PM verifies + `/code-review` gate, then auto-advances. The public-tunnel
-  signed-webhook smoke test coordinates with Asaf's `LIVE0` track. Carry the Stage-6 obligations forward.
+- **Next action:** **Stage 5 — Outbound orchestration + consent + budget guard** (`app/orchestrate.py` — the campaign
+  runner over the synthetic lead list: consent gate + budget guard before dialing, retries, voicemail, daily cap, all
+  resilient, zero live calls in the default suite; `CALL1`–`CALL4`, `CON1`, `CON4`, `CON5`, `SEC3`) under the autonomous
+  loop; PM verifies + `/code-review` gate (consent chokepoint + budget guard), then auto-advances. **`SEC3`/`CON1`
+  second-entry-point spy** (`scripts/place_demo_call.py` must route through `budget_permits` + `consent_allows` before
+  `place_call`) lands here. Carry the Stage-6 obligations forward.

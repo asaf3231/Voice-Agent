@@ -246,6 +246,26 @@ does not use this margin. Suite re-verified **107 green**. The only §9 constant
   from `config` in `persona.py`** (verified by identity). The bake-off is non-decisive on the core hypothesis
   until Stage-6 enrichment (recorded above).
 
+- **2026-06-23 19:16 — Stage 4 verified (PM-run against live code, post-crash recovery):**
+  - **Full suite: 245 passed / 0 failed** (`pytest tests/`, offline, venv CPython 3.13.2 / pytest 9.1.1) — matches
+    the executer's handback claim exactly; deterministic across runs.
+  - **ENV4 import-safe from an empty cwd** (`/private/tmp`) across **all 7 app modules** (config/budget/consent/tools/
+    calendar_client/**vapi_client/server**): `_vapi` and `_calendar` lazy singletons both `None`; **httpx NOT in
+    `sys.modules`** after import (genuinely lazy); FastAPI `app` constructed at module level is side-effect-free
+    (`.env` loaded only in the `lifespan` at startup, never at import).
+  - **Both graded literals byte-exact == CLAUDE.md §9 and identity-equal to config** (`persona.X is config.X`):
+    `DISCLOSURE_LINE` pure ASCII; `FAILSAFE_HANGUP_LINE` only non-ASCII = em-dash U+2014. `REALTIME_MODEL ==
+    "gpt-4o-realtime-preview"`.
+  - **`VoiceProvider` interface intact** — exactly the 3 graded methods (`configure_assistant` / `place_call` /
+    `fetch_call_cost`); `configure_assistant` is a pure offline builder wiring the realtime model + 5 tools (names
+    asserted == `AGENT_TOOLS`) + `DISCLOSURE_LINE` in the static `firstMessage` byte-exact + `recordingEnabled` (CON3).
+  - **Webhook auth (VOICE2):** `verify_signature` = HMAC-SHA256 over the **raw body**, constant-time
+    (`hmac.compare_digest`), **fails closed** on missing secret/sig; unverified → 401 never processed (read-verified +
+    test-verified). **VOICE3:** dispatch routes to `app.tools.dispatch`; unknown tool / bad args / no-tool-call →
+    structured error at HTTP 200, no traceback; phone masked.
+  - **Diff is additive + no graded contract changed:** the only deletions are the legitimate `ENV4` subprocess
+    import-list extension to cover `vapi_client` + `server`.
+
 ---
 
 ## Stage handbacks
@@ -314,3 +334,33 @@ no crash), idempotent `create_event` (same lead+slot → same `event_id`), confl
 default; live event type carries its own tz); MockCalendar business-hours grid kept local to the mock (NOT promoted
 to §9 — mock-shaping, not governance). **Live note:** `CalComCalendar` idempotency relies on Cal.com's 409 (not
 self-dedup) — validate in Stage 8. **Resolves OQ-VOICE-3.** Committed on `main`.
+
+### 2026-06-23 19:16 — Stage 4 handback + PM verification (crash recovery)  *(PM-verified, not the executer's word)*
+**Context:** the prior (Stage-3→4) PM session spawned the Stage-4 executer, which **ran to completion and wrote
+`handbacks/stage-4.md`**, but the PM session **crashed before** verification/review/commit/log — leaving Stage-4 code
+on disk, PM-unverified, uncommitted, with `PLAN.md` still ⬜. This session recovered it **PM-led, no executer respawn**
+(surgical/verification only — budget rule), identical in shape to the Stage-1 recovery.
+**Built by (recovered):** the cold Stage-4 executer. **Files:** `app/vapi_client.py` (`VoiceProvider` Protocol [3
+graded methods] + `VapiVoiceProvider`: pure offline `configure_assistant` builder + lazy-httpx `place_call`/
+`fetch_call_cost` returning structured `CallResult`/`CostResult`), `app/server.py` (import-safe FastAPI; `verify_signature`
+HMAC-SHA256 fail-closed; `/webhook/tool` → `tools.dispatch`, `/webhook/status`, `/health`), `app/persona.py`
+(+`build_system_prompt` — live prompt assembled at runtime from the value-prop, both literals from config, LEAK3-clean),
+`tests/test_voice.py` (28) + `tests/test_server.py` (24) + `tests/conftest.py` (+`FakeVoiceProvider`) +
+`tests/test_env.py` (ENV4 extended to 7 modules). **No graded contract changed; no DECISION-NEEDED.**
+**PM verification (run, not inspected):** see Verified facts 2026-06-23 19:16 — **245 passed / 0 failed**; ENV4
+import-safe across all 7 modules (httpx not pulled); both literals byte-exact == §9 from config; `VoiceProvider`
+signatures intact; disclosure pinned to static `firstMessage` byte-exact; webhook fails-closed; dispatch structured-error
+safe; diff additive.
+**Reviewer gate (`/code-review`, PM-inline per the no-cold-spawn budget rule — contract-touching: provider interface +
+webhook auth + import-safety):** **APPROVE.** 0 Critical/Important. **2 LOW (non-blocking, live-carry, already
+documented):** (1) the exact Vapi signature header name/scheme + assistant payload field shapes (`firstMessage`,
+`recordingEnabled`, `model.tools`) are assumptions to reconcile against the real Vapi API at Stage 8 — `verify_signature`
++ `configure_assistant` are isolated for a one-spot fix; (2) `_extract_tool_call` checks the flat `name` form before the
+nested Vapi form (theoretical mis-route only if a provider sent both at once; unreachable with real Vapi/test payloads).
+**Executer decisions (PM-reviewed, accepted; none graded):** HMAC over raw body + constant-time + fail-closed; payload
+tolerance (flat `{name,arguments}` AND Vapi `message.toolCalls[].function`/legacy `functionCall`); `FastAPI(lifespan=…)`
+over deprecated `on_event` (import-safe + clean tree, §8); tool JSON-schemas mirror each tool's kwargs with a
+names-==-`AGENT_TOOLS` assert; `build_system_prompt` default variant "B" (provisional winner, kept a parameter).
+**Deviations:** none on offline scope — the public-HTTPS-tunnel signed end-to-end webhook smoke test was deliberately
+**not** attempted (live/gated, coordinated with `LIVE0`/Stage 8). **Carry-forward (unchanged):** Stage-6 must enrich
+`simulated_callee` + re-run the A/B before locking the persona for live. Committed on `main`.

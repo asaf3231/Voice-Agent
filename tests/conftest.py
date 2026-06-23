@@ -7,6 +7,7 @@ Fixtures defined here:
   - tmp_allowlist      : a consent allowlist with one allowed + one absent number
   - allowed_number     : the E.164 number that IS on tmp_allowlist
   - absent_number      : an E.164 number deliberately NOT on tmp_allowlist
+  - FakeVoiceProvider  : a VoiceProvider stand-in (scripted, never networks)
 
 These fixtures create real temporary files in tmp_path so the modules under
 test can read them as they would in production. No network, no .env.
@@ -15,7 +16,9 @@ test can read them as they would in production. No network, no .env.
 from __future__ import annotations
 
 import json
+from collections import deque
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -117,3 +120,83 @@ def tmp_allowlist(tmp_path: Path) -> Path:
     p = tmp_path / "consent_allowlist.json"
     p.write_text(json.dumps(data), encoding="utf-8")
     return p
+
+
+# ---------------------------------------------------------------------------
+# FakeVoiceProvider — a VoiceProvider stand-in (QA_checklist.md §0)
+# ---------------------------------------------------------------------------
+
+class FakeVoiceProvider:
+    """A scripted VoiceProvider for the offline suite — NEVER networks.
+
+    Implements the graded VoiceProvider interface (configure_assistant /
+    place_call / fetch_call_cost). `configure_assistant` delegates to the real
+    Vapi builder (a pure, offline function) so the assistant payload under test is
+    the genuine one; `place_call` / `fetch_call_cost` return scripted results from
+    queues. Set `raise_on_call=True` to simulate a hard provider failure, or push
+    error CallResults to test resilience. This proves the adapter seam (VOICE5):
+    server.py / orchestrate.py depend only on the interface, so this fake drops in.
+    """
+
+    def __init__(self) -> None:
+        # Scripted outputs (FIFO). Tests push expected results; the fake pops them.
+        self._call_results: deque[Any] = deque()
+        self._cost_results: deque[Any] = deque()
+        self.raise_on_call = False
+        # Spy state: what the fake was asked to do (assertion targets).
+        self.calls_placed: list[dict[str, Any]] = []
+        self.costs_fetched: list[str] = []
+
+    # -- scripting helpers (test-only; not part of the interface) -----------
+
+    def queue_call_result(self, result: Any) -> None:
+        self._call_results.append(result)
+
+    def queue_cost_result(self, result: Any) -> None:
+        self._cost_results.append(result)
+
+    # -- VoiceProvider interface --------------------------------------------
+
+    def configure_assistant(
+        self,
+        *,
+        variant: str = "B",
+        value_prop_path: str | None = None,
+    ) -> dict[str, Any]:
+        """Build the assistant payload via the real (offline, pure) Vapi builder."""
+        from app.vapi_client import VapiVoiceProvider
+
+        return VapiVoiceProvider().configure_assistant(
+            variant=variant, value_prop_path=value_prop_path
+        )
+
+    def place_call(
+        self,
+        *,
+        to_number: str,
+        assistant: dict[str, Any],
+    ) -> Any:
+        """Return the next scripted CallResult — never networks."""
+        from app.vapi_client import CallResult
+
+        self.calls_placed.append({"to_number": to_number, "assistant": assistant})
+        if self.raise_on_call:
+            raise RuntimeError("FakeVoiceProvider scripted failure")
+        if self._call_results:
+            return self._call_results.popleft()
+        return CallResult(ok=True, call_id="fake-call-0001", status="queued")
+
+    def fetch_call_cost(self, *, call_id: str) -> Any:
+        """Return the next scripted CostResult — never networks."""
+        from app.vapi_client import CostResult
+
+        self.costs_fetched.append(call_id)
+        if self._cost_results:
+            return self._cost_results.popleft()
+        return CostResult(ok=True, cost_usd=0.12)
+
+
+@pytest.fixture()
+def fake_voice_provider() -> FakeVoiceProvider:
+    """A fresh scripted FakeVoiceProvider per test (never networks)."""
+    return FakeVoiceProvider()

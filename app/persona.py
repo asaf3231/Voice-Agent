@@ -429,3 +429,90 @@ def run_conversation(
     runner = DialogRunner(policy, vp, max_turns=max_turns)
     callee = SimulatedCallee(persona)
     return runner.run(callee)
+
+
+# ===========================================================================
+# Live system prompt — assembled at RUNTIME from the value-prop (LEAK3)
+# ===========================================================================
+
+# Variant-specific ordering guidance for the live model. These are POLICY hints
+# (the same A/B contrast as build_policy — ordering, not content); the assertable
+# facts are injected from the value-prop file, never from here (CONV4 / LEAK3).
+_VARIANT_PROMPT_GUIDANCE: dict[str, str] = {
+    "A": (
+        "Style: consultative / discovery-led. After the opening, ask ONE short "
+        "discovery question to surface the prospect's current outbound pain, then "
+        "tailor the pitch to what they say before proposing the meeting."
+    ),
+    "B": (
+        "Style: direct / value-first. After the opening, lead with the crispest "
+        "value propositions and ask for the meeting early; handle objections after."
+    ),
+}
+
+
+def build_system_prompt(
+    variant: str = "B",
+    value_prop: ValueProp | None = None,
+    *,
+    value_prop_path: Path | str | None = None,
+) -> str:
+    """Assemble the LIVE model's system prompt from the chosen variant + value-prop.
+
+    Every assertable Alta fact is injected from the value-prop content at runtime
+    (LEAK3 — no Alta claim is hardcoded here); the two graded literals are consumed
+    from config (DISCLOSURE_LINE / FAILSAFE_HANGUP_LINE), never re-literaled. The
+    prompt instructs: disclosure-first, pitch ONLY from the value-props, handle
+    objections with the approved talking points, propose the 30-min meeting, book
+    ONLY via the tools, and speak FAILSAFE_HANGUP_LINE on a cap or error.
+
+    The disclosure is ALSO pinned to the platform static first-message (the
+    chokepoint — see app/vapi_client.py); restating it here is belt-and-suspenders,
+    not the enforcement point (Red-Team Finding 4 / CON2).
+
+    Default variant is the provisional winner "B" but it stays a parameter.
+
+    Args:
+        variant:           "A" or "B" — selects the ordering guidance.
+        value_prop:        a pre-loaded ValueProp; if None it is loaded at runtime.
+        value_prop_path:   override path used only when *value_prop* is None.
+
+    Returns:
+        The assembled system-prompt string.
+    """
+    policy = build_policy(variant)
+    vp = value_prop if value_prop is not None else load_value_prop(value_prop_path)
+
+    value_props_block = "\n".join(
+        f"  - {claim}" for claim in vp.value_props
+    )
+    objections_block = "\n".join(
+        f'  - When the prospect says "{trigger}", respond: {reply}'
+        for trigger, reply in vp.objection_responses.items()
+    ) or "  - (no scripted objection responses provided)"
+
+    guidance = _VARIANT_PROMPT_GUIDANCE.get(
+        variant.upper(), _VARIANT_PROMPT_GUIDANCE["B"]
+    )
+
+    return (
+        "You are Aria, an AI assistant placing an outbound sales call on behalf of "
+        "Alta. You are professional, warm, and concise.\n\n"
+        f"OPENING (mandatory, verbatim, FIRST): \"{DISCLOSURE_LINE}\" "
+        "This exact line is delivered by the platform as the first message; do not "
+        "paraphrase it or speak before it.\n\n"
+        f"DIALOG POLICY ({policy.variant} — {policy.name}):\n{guidance}\n\n"
+        "WHAT YOU MAY ASSERT (the ONLY Alta facts you may state — never invent a "
+        "claim, price, ROI number, or customer name outside this list):\n"
+        f"{value_props_block}\n\n"
+        f"THE MEETING ASK: {vp.meeting_pitch}\n\n"
+        "OBJECTION HANDLING (use these approved responses; recover before honoring "
+        f"a hard no):\n{objections_block}\n\n"
+        "TOOLS (you MUST use these — never claim a booking that a tool did not "
+        "confirm): call check_availability to find free slots, book_meeting to book "
+        "one (only voice a confirmation AFTER it succeeds), log_disposition to record "
+        "the outcome, detect_voicemail on a greeting, and end_call to hang up.\n\n"
+        "SAFE TERMINAL: if you hit a limit or an error, or the prospect issues a hard "
+        f"no, say exactly: \"{FAILSAFE_HANGUP_LINE}\" and end the call. Never improvise "
+        "a non-compliant promise."
+    )
