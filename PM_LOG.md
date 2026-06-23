@@ -409,3 +409,27 @@ reviewer gate) but discharges the carry-forward: enrich `simulated_callee` (disc
 param + `eval/__init__` docstring, and **re-run the A/B bake-off** (executer reports the table; PM adjudicates the
 persona lock — do not let the executer flip `build_system_prompt`'s default). If this session crashes mid-Stage-6:
 Stage 5 is safely committed at `1a99726`; resume by checking disk for uncommitted `app/eval/harness.py` + `tests/test_eval.py`.
+
+## 2026-06-23 ~20:10 — [VOICE] SESSION END / HANDOFF (Stages 5 & 6 ✅ committed; HALT on persona-lock decision)
+Did (this "run the loop" block): drove the autonomous loop through **Stage 5** (`1a99726`) and **Stage 6** (`068713e`).
+- **Stage 5** — orchestration + consent + budget guard: cold executer built it; PM-verified (287 green; ENV4 8 modules;
+  no graded contract touched); **first genuinely independent cold reviewer gate → APPROVE** (chokepoint clean in BOTH
+  entry points; 2 MINOR PM-fixed before commit). The corrected post-Stage-4 reviewer process is now in force.
+- **Stage 6** — offline eval harness: cold executer built `harness.py` + `tests/test_eval.py` (48) + fixtures, enriched
+  `simulated_callee` (discovery-responsiveness via the seeded `_rng`), closed the 3 carry-forward eval findings.
+  PM-verified: **335 green, deterministic across two runs**; ENV4 import-safe; **PM re-ran the bake-off and reproduced
+  the table exactly**; no graded contract changed. Pure-eval ⇒ no reviewer gate.
+Verified numbers (PM-run): **335 passed / 0 failed** (twice); bake-off A book 0.4 / B 0.2 (disclosure 0.8 / objection 1.0
+/ compliance 1.0 tie; avg_turns A 3.4 / B 2.6).
+Status now: ✅ **Stages 0–6 complete, PM-verified, committed.** **HALTED on a required decision (loop trigger #1).**
+**THE DECISION (Asaf):** the enriched A/B **flipped the provisional winner B→A** — on the numbers **A (Consultative)
+wins** (2× book-rate, ties elsewhere). Locking A flips the **live demo persona** default (`build_system_prompt` +
+`configure_assistant` "B"→"A" + conftest fake + docstrings). PM recommends **lock A**; deliberately NOT auto-flipped
+(surface, don't bury). Not a prerequisite for Stage 7 — only for Stage 8.
+Next PM should: get Asaf's call on the persona lock (recommend A), apply it if confirmed (small, mechanical: 2 app
+defaults + conftest + docstrings; re-run suite), then proceed to **Stage 7 — Anti-leakage & packaging hardening**
+(`LEAK1`–`LEAK5`, `PKG1`–`PKG4`) under the loop, which additionally runs the native **`/security-review`** gate. Stage 7
+can start in parallel with the persona decision.
+Watch out for / open: **persona-lock decision pending** (the one halt); Stage-4 public-tunnel live webhook smoke owed at
+Stage 8; `LIVE0` provisioning is Asaf's parallel track + #1 schedule risk; recurring mid-stage crashes — re-verify disk
+vs ledger on resume.
