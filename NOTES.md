@@ -239,6 +239,13 @@ does not use this margin. Suite re-verified **107 green**. The only §9 constant
     `Home_Assignment_email.md`, `REFERENCE/`, real `consent_allowlist.json`, `briefs/`, `handbacks/`,
     `.claude/settings.local.json` are IGNORED; `.env.example` + `consent_allowlist.example.json` trackable.
 
+- **2026-06-23 18:40 — Stage 2 verified (PM-run against live code):** full suite **150 passed / 0 failed**;
+  `run_bakeoff()` **PM-reproduced + deterministic across runs**; the four mandated A/B criteria (book 0.2 /
+  disclosure 0.8 / objection 1.0 / compliance 1.0) **tie**, B leaner on avg_turns (2.6 vs 3.2) → **provisional
+  winner B (Direct)**; all modules import-safe from an empty cwd; both literals byte-exact == §9 and **consumed
+  from `config` in `persona.py`** (verified by identity). The bake-off is non-decisive on the core hypothesis
+  until Stage-6 enrichment (recorded above).
+
 ---
 
 ## Stage handbacks
@@ -258,3 +265,35 @@ cross-check, a smart-quote regression guard, and `load_env` coverage; deleted sc
 (§8 "no magic values inline"); it tolerates ~1¢ silent overspend on the *post-hoc* alarm (the real gate is
 `budget_permits`, pre-call). Naming it as a config constant touches the §9-controlled set, so it is **held**
 for your decision: (a) name it in `config.py`, or (b) accept as-is.
+
+### 2026-06-23 18:40 — Stage 2 handback + PM bake-off adjudication  *(PM-verified, not the executer's word)*
+**Built by:** one cold `general-purpose` executer (operating model "Executer builds, PM scores", Asaf-chosen).
+**Files:** `app/eval/{__init__,simulated_callee,rubric,bakeoff}.py`, `app/persona.py` (A/B via `build_policy`),
+`tests/test_conversation.py`; + a `config.value_prop_path()` lazy path-resolver helper.
+**PM verification (run, not inspected):** full suite **150 passed / 0 failed** (PM re-ran); ENV4 import-safe
+(all modules, empty cwd, lazy singletons None); both literals still byte-exact == CLAUDE.md §9 **and consumed
+from config in persona.py** (`persona.DISCLOSURE_LINE is config.DISCLOSURE_LINE`); rubric genuinely **computed**
+(negative guards flip compliance False for an injected `$499` price, a phantom booking, and a curly-apostrophe
+failsafe drift); LEAK3 clean; **PM independently re-ran `run_bakeoff()` — reproduced the executer's table exactly
+and deterministic across runs** (the bake-off-integrity check).
+**Computed bake-off table (PM-reproduced):**
+```
+variant | name                         | book | disclosure | objection | compliance | avg_turns
+A       | Consultative / discovery-led | 0.2  | 0.8        | 1.0       | 1.0        | 3.2
+B       | Direct / value-first         | 0.2  | 0.8        | 1.0       | 1.0        | 2.6
+```
+**PM adjudication:** the **four mandated criteria (book / disclosure / objection / compliance) TIE.** The only
+computed separator is `avg_agent_turns` (B leaner — A's discovery turn adds a turn without changing the outcome
+*in the minimal model*). → **Provisional winner: Variant B (Direct / value-first)** — equal quality/compliance,
+leaner (shorter/cheaper calls; lean-budget aligned). Both variants stay available via `build_policy` — reversible.
+**⚠ Non-decisive — Stage-6 dependency:** the bake-off CANNOT yet evaluate the core hypothesis (does discovery-led
+booking beat value-first?) because the minimal `simulated_callee` books the cooperative persona regardless of
+discovery. **Stage 6 MUST enrich the callee so discovery-responsiveness is modeled, then re-run the bake-off
+before the persona is locked for live (Stage 4/8).**
+**2 minor non-blocking findings (deferred to Stage-6 cleanup):** (1) `SimulatedCallee._rng` is seeded but unused
+(determinism comes from fixed scripts + sequential indices) — §8; (2) `rubric._find_invented_claim(…, claims)`
+ignores `claims` and its docstring overclaims a file-grounding check it doesn't perform (works now: agent content
+carries no $/%/Nx). Neither affects correctness or any score.
+**Executer decisions (PM-reviewed, accepted):** added `config.value_prop_path()` — a lazy resolver (NOT a §9
+magic-value constant; mirrors `_resolve_allowlist_path`), needed because the Stage-1 LEAD3 test forbids the
+`value_prop.md` literal in app code; tightened `pitch_delivered` to exclude the OPENING disclosure. Both sound.

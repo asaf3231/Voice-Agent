@@ -1,0 +1,431 @@
+"""Alta Outbound Voice Agent — app/persona.py
+
+Single responsibility: Aria's dialog policy — the conversation state machine
+(pitch → discovery → objection-handling → propose-slot → close), the two graded
+byte-exact literals (consumed from app.config, never redefined), the
+authoritative-content guardrail (CONV4/Policy 4), and the two A/B persona
+variants selected by a parameter (build_policy(variant="A"|"B")).
+
+State machine (CONV1):
+    OPENING → {A: DISCOVERY→PITCH | B: PITCH} → OBJECTION* → PROPOSE_SLOT → CLOSE
+On MAX_AGENT_TURNS (or an error) the agent speaks FAILSAFE_HANGUP_LINE and ends
+(CONV5/CONV6). The disclosure is the FIRST utterance (mirrors the Stage-4 static
+first-message — CON2 offline).
+
+Variants (policy/ordering only — NEVER different content; both draw all
+pitch/objection text from the value-prop file at runtime, LEAK3):
+    A "Consultative / discovery-led" : disclosure → discovery question → pitch
+        tailored to the surfaced pain → objection handling → propose a slot.
+    B "Direct / value-first"         : disclosure → crisp value-prop + early
+        meeting ask → objection handling after → re-propose a slot.
+
+Import-safety (ENV4): defines only constants/functions/dataclasses. The value-prop
+file is read LAZILY (inside the policy at run time) via config.value_prop_path(),
+never at import. No network, no client, no .env. The two literals come from
+app.config so they cannot drift.
+
+This module owns the AGENT side; app/eval/simulated_callee.py owns the callee;
+app/eval/rubric.py scores the resulting transcript. The bake-off (run_bakeoff) wires
+all three. The PM independently re-runs the rubric — this module declares NO winner.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from app.config import (
+    DISCLOSURE_LINE,
+    FAILSAFE_HANGUP_LINE,
+    MAX_AGENT_TURNS,
+    value_prop_path,
+)
+from app.eval import Disposition, Persona, Speaker, Stage, Turn
+from app.eval.simulated_callee import SimulatedCallee
+
+
+# ===========================================================================
+# Value-prop content, parsed from the value-prop file at RUNTIME (LEAK3)
+# ===========================================================================
+
+@dataclass(frozen=True)
+class ValueProp:
+    """The agent's assertable content, parsed from the value-prop file.
+
+    Nothing here is hardcoded: every field is extracted from the file the caller
+    passes (or the repo default) at runtime. The agent may assert ONLY this
+    content (CONV4 / Policy 4).
+    """
+
+    value_props: tuple[str, ...]            # the numbered core value propositions
+    objection_responses: dict[str, str]     # objection keyword → approved reply
+    meeting_pitch: str                       # the 30-min meeting ask
+
+
+def _read_text(path: Path | str | None) -> str:
+    resolved = value_prop_path() if path is None else Path(path)
+    if not resolved.exists():
+        raise FileNotFoundError(
+            f"Value-prop file not found: {resolved}. "
+            "The agent grounds every claim in the value-prop file (LEAK3)."
+        )
+    return resolved.read_text(encoding="utf-8")
+
+
+def _extract_section(text: str, heading: str) -> str:
+    """Return the body of a section whose '## ' heading STARTS WITH *heading*.
+
+    Prefix-matched (not full-line) so a heading with a trailing qualifier — e.g.
+    '## Objection responses (approved talking points)' — still resolves from
+    'Objection responses'. Body runs up to the next '## ' heading or EOF.
+    """
+    pattern = re.compile(
+        rf"^##\s+{re.escape(heading)}.*?$(.*?)(?=^##\s+|\Z)",
+        re.MULTILINE | re.DOTALL,
+    )
+    m = pattern.search(text)
+    return m.group(1) if m else ""
+
+
+def load_value_prop(path: Path | str | None = None) -> ValueProp:
+    """Parse the value-prop file into structured, assertable content (runtime).
+
+    Extracts:
+      - the numbered '## Core value propositions' items → value_props
+      - the '## Objection responses' bullets → objection_responses (keyword→reply)
+      - the '## Meeting pitch' quoted block → meeting_pitch
+
+    A missing file is a clean explicit error (mirrors LEAD1), not a mid-call crash.
+    """
+    text = _read_text(path)
+
+    # --- core value propositions: numbered "N. **Title** — body" items ---
+    vp_section = _extract_section(text, "Core value propositions")
+    raw_items = re.split(r"^\s*\d+\.\s+", vp_section, flags=re.MULTILINE)
+    value_props = tuple(
+        _flatten(item) for item in raw_items if item.strip()
+    )
+
+    # --- objection responses: bullets of form: - **"trigger"** → "reply" ---
+    obj_section = _extract_section(text, "Objection responses")
+    objection_responses: dict[str, str] = {}
+    for trigger, reply in re.findall(
+        r"\*\*\"([^\"]+)\"\*\*[^\n]*?→\s*\"([^\"]+)\"",
+        obj_section,
+    ):
+        objection_responses[trigger.strip().lower()] = _flatten(reply)
+
+    # --- meeting pitch: the quoted block under '## Meeting pitch' ---
+    pitch_section = _extract_section(text, "Meeting pitch")
+    pitch_match = re.search(r"\"(.+?)\"", pitch_section, re.DOTALL)
+    meeting_pitch = _flatten(pitch_match.group(1)) if pitch_match else ""
+
+    if not value_props:
+        raise ValueError(
+            "The value-prop file parsed no '## Core value propositions' — the "
+            "format changed; the agent cannot pitch ungrounded content (CONV4)."
+        )
+
+    return ValueProp(
+        value_props=value_props,
+        objection_responses=objection_responses,
+        meeting_pitch=meeting_pitch,
+    )
+
+
+def _flatten(s: str) -> str:
+    """Collapse whitespace/markdown emphasis into a single clean utterance line."""
+    s = s.replace("*", "").replace("\n", " ")
+    return re.sub(r"\s+", " ", s).strip()
+
+
+# ===========================================================================
+# The dialog policy (the two variants differ only by ordering)
+# ===========================================================================
+
+@dataclass(frozen=True)
+class DialogPolicy:
+    """An immutable description of one A/B variant's ordering rules.
+
+    The two variants share ALL content (drawn from ValueProp) and differ only in
+    `stage_order` — the sequence of agent stages between the disclosure and the
+    close. This is the entire A/B contrast: policy, not content (LEAK3/CONV4).
+    """
+
+    variant: str
+    name: str
+    stage_order: tuple[Stage, ...]
+
+
+# Variant A — Consultative / discovery-led: ask first, then pitch to the pain.
+_VARIANT_A = DialogPolicy(
+    variant="A",
+    name="Consultative / discovery-led",
+    stage_order=(Stage.DISCOVERY, Stage.PITCH, Stage.PROPOSE_SLOT),
+)
+
+# Variant B — Direct / value-first: lead with the value-prop + early ask.
+_VARIANT_B = DialogPolicy(
+    variant="B",
+    name="Direct / value-first",
+    stage_order=(Stage.PITCH, Stage.PROPOSE_SLOT),
+)
+
+_VARIANTS = {"A": _VARIANT_A, "B": _VARIANT_B}
+
+
+def build_policy(variant: str = "A") -> DialogPolicy:
+    """Return the DialogPolicy for *variant* ('A' or 'B').
+
+    This is the parameter-selected variant constructor mandated by the brief —
+    NOT two copy-pasted modules. An unknown variant is a clean error.
+    """
+    key = variant.upper()
+    if key not in _VARIANTS:
+        raise ValueError(f"Unknown variant {variant!r}; expected 'A' or 'B'.")
+    return _VARIANTS[key]
+
+
+# ===========================================================================
+# The conversation runner — drives one offline call to a transcript
+# ===========================================================================
+
+@dataclass
+class ConversationResult:
+    """The outcome of one simulated conversation."""
+
+    transcript: list[Turn] = field(default_factory=list)
+    disposition: Disposition = Disposition.ERROR
+    agent_turns: int = 0
+
+
+class DialogRunner:
+    """Drives a deterministic offline conversation for one variant + persona.
+
+    The runner produces the AGENT turns from the policy + ValueProp; the
+    SimulatedCallee produces the callee turns. It enforces the turn cap
+    (MAX_AGENT_TURNS → FAILSAFE_HANGUP_LINE, CONV5/CONV6) and never raises mid-call
+    (component failures become a FAILSAFE disposition, §6).
+    """
+
+    def __init__(
+        self,
+        policy: DialogPolicy,
+        value_prop: ValueProp,
+        *,
+        max_turns: int = MAX_AGENT_TURNS,
+    ) -> None:
+        self.policy = policy
+        self.vp = value_prop
+        self.max_turns = max_turns
+
+    # -- agent utterance builders (all content from self.vp — LEAK3) --------
+
+    def _disclosure_turn(self) -> Turn:
+        # Byte-exact, from config — the FIRST utterance (CON2 offline).
+        return Turn(speaker=Speaker.AGENT, text=DISCLOSURE_LINE, stage=Stage.OPENING)
+
+    def _discovery_turn(self) -> Turn:
+        text = (
+            "Before I dive in — how are you handling outbound prospecting today? "
+            "I want to make sure this is even relevant to you."
+        )
+        return Turn(speaker=Speaker.AGENT, text=text, stage=Stage.DISCOVERY)
+
+    def _pitch_turn(self) -> Turn:
+        # Pitch is the joined grounded value-props from the file (never invented).
+        body = " ".join(self.vp.value_props[:2]) if self.vp.value_props else ""
+        return Turn(speaker=Speaker.AGENT, text=body, stage=Stage.PITCH)
+
+    def _objection_turn(self, callee_text: str) -> Turn:
+        """Return the approved scripted recovery for *callee_text* (from the file)."""
+        reply = self._lookup_objection(callee_text)
+        return Turn(speaker=Speaker.AGENT, text=reply, stage=Stage.OBJECTION)
+
+    def _lookup_objection(self, callee_text: str) -> str:
+        low = callee_text.lower()
+        for trigger, reply in self.vp.objection_responses.items():
+            if trigger in low:
+                return reply
+        # Fallback to the generic "not interested" recovery if present, else a
+        # safe, content-grounded acknowledgement (never an invented claim).
+        for key in ("not interested", "send me an email"):
+            if key in self.vp.objection_responses:
+                return self.vp.objection_responses[key]
+        return "I understand — may I ask what you're using for outbound today?"
+
+    def _propose_slot_turn(self) -> Turn:
+        return Turn(
+            speaker=Speaker.AGENT,
+            text=self.vp.meeting_pitch,
+            stage=Stage.PROPOSE_SLOT,
+        )
+
+    def _booking_confirm_turn(self) -> Turn:
+        # booked=True flags a genuine booking (the rubric's no-phantom check).
+        return Turn(
+            speaker=Speaker.AGENT,
+            text="You're all set — I've got you down for that slot. Looking forward to it.",
+            stage=Stage.CLOSE,
+            booked=True,
+        )
+
+    def _failsafe_turn(self) -> Turn:
+        # Byte-exact, from config (CONV6).
+        return Turn(speaker=Speaker.AGENT, text=FAILSAFE_HANGUP_LINE, stage=Stage.DONE)
+
+    # -- the main loop ------------------------------------------------------
+
+    def run(self, callee: SimulatedCallee) -> ConversationResult:
+        """Run one conversation against *callee*; return the transcript + outcome."""
+        result = ConversationResult()
+        transcript = result.transcript
+
+        # Non-answering / voicemail personas short-circuit cleanly (no booking).
+        if not callee.answers():
+            result.disposition = Disposition.NO_ANSWER
+            return result
+        if callee.is_voicemail():
+            transcript.append(self._disclosure_turn())
+            result.agent_turns = 1
+            transcript.append(callee.voicemail_greeting())
+            result.disposition = Disposition.VOICEMAIL
+            return result
+
+        # 1. Disclosure first (CON2).
+        self._emit(transcript, self._disclosure_turn(), result)
+        if self._cap_hit(result):
+            return self._failsafe(transcript, result)
+        transcript.append(callee.respond(transcript[-1]))
+
+        # 2. Walk the variant's stage order, handling objections inline.
+        for stage in self.policy.stage_order:
+            agent_turn = self._turn_for_stage(stage)
+            self._emit(transcript, agent_turn, result)
+            if self._cap_hit(result):
+                return self._failsafe(transcript, result)
+
+            callee_turn = callee.respond(agent_turn)
+            transcript.append(callee_turn)
+
+            # Inline objection handling: recover, then re-check for a hard no.
+            handled = self._handle_objections(transcript, callee, result)
+            if handled is _HARD_NO:
+                result.disposition = Disposition.DECLINED
+                return result
+            if self._cap_hit(result):
+                return self._failsafe(transcript, result)
+
+        # 3. Close: if the callee accepted a slot, voice a real booking.
+        if self._callee_accepted(transcript):
+            self._emit(transcript, self._booking_confirm_turn(), result)
+            result.disposition = Disposition.BOOKED
+        else:
+            result.disposition = Disposition.DECLINED
+        return result
+
+    # -- helpers ------------------------------------------------------------
+
+    def _turn_for_stage(self, stage: Stage) -> Turn:
+        if stage is Stage.DISCOVERY:
+            return self._discovery_turn()
+        if stage is Stage.PITCH:
+            return self._pitch_turn()
+        if stage is Stage.PROPOSE_SLOT:
+            return self._propose_slot_turn()
+        # Defensive: an unexpected stage falls back to the pitch (never raises).
+        return self._pitch_turn()
+
+    def _handle_objections(
+        self,
+        transcript: list[Turn],
+        callee: SimulatedCallee,
+        result: ConversationResult,
+    ) -> object | None:
+        """Recover from any objection in the callee's last turn.
+
+        Returns _HARD_NO if the callee has issued its final hard no (the agent
+        must respect it); None otherwise. Each recovery is a scripted reply from
+        the value-prop file (CONV3), never a hang-up on the first objection.
+        """
+        last = transcript[-1]
+        if last.speaker is not Speaker.CALLEE:
+            return None
+
+        # A hard no is honored — respect the hang-up (Policy 6).
+        if callee.hard_no_reached():
+            return _HARD_NO
+
+        low = last.text.lower()
+        if self._is_objection(low):
+            self._emit(transcript, self._objection_turn(last.text), result)
+            if self._cap_hit(result):
+                return None
+            # Let the callee respond to the recovery, then re-check for a hard no.
+            transcript.append(callee.respond(transcript[-1]))
+            if callee.hard_no_reached():
+                return _HARD_NO
+        return None
+
+    @staticmethod
+    def _is_objection(low_text: str) -> bool:
+        return any(
+            m in low_text
+            for m in ("not interested", "send me an email", "send the email", "busy")
+        )
+
+    @staticmethod
+    def _callee_accepted(transcript: list[Turn]) -> bool:
+        """True if the callee's last substantive turn accepted a proposed slot."""
+        for t in reversed(transcript):
+            if t.speaker is Speaker.CALLEE:
+                low = t.text.lower()
+                return any(
+                    k in low for k in ("works for me", "works", "tuesday", "wednesday")
+                )
+        return False
+
+    def _emit(
+        self, transcript: list[Turn], turn: Turn, result: ConversationResult
+    ) -> None:
+        transcript.append(turn)
+        result.agent_turns += 1
+
+    def _cap_hit(self, result: ConversationResult) -> bool:
+        return result.agent_turns >= self.max_turns
+
+    def _failsafe(
+        self, transcript: list[Turn], result: ConversationResult
+    ) -> ConversationResult:
+        """Speak FAILSAFE_HANGUP_LINE byte-exact and end (CONV5/CONV6)."""
+        transcript.append(self._failsafe_turn())
+        result.disposition = Disposition.FAILSAFE
+        return result
+
+
+# Sentinel signalling the objecting callee has issued a final hard no.
+_HARD_NO = object()
+
+
+# ===========================================================================
+# Convenience: run one variant against one persona to a transcript
+# ===========================================================================
+
+def run_conversation(
+    variant: str,
+    persona: Persona,
+    *,
+    value_prop_path: Path | str | None = None,
+    max_turns: int = MAX_AGENT_TURNS,
+) -> ConversationResult:
+    """Run a single deterministic offline conversation; return its result.
+
+    All content is loaded from the value-prop file at runtime (LEAK3); determinism
+    comes from the seeded SimulatedCallee (config.RANDOM_SEED).
+    """
+    policy = build_policy(variant)
+    vp = load_value_prop(value_prop_path)
+    runner = DialogRunner(policy, vp, max_turns=max_turns)
+    callee = SimulatedCallee(persona)
+    return runner.run(callee)

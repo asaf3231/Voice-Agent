@@ -234,3 +234,41 @@ deterministic `app/eval/rubric.py` framework **first**, BEFORE authoring any per
 bake-off (Red-Team Finding 5; `EVAL2`/`LEAK4`).
 Watch out for / open: `LIVE0` provisioning lead time (#1 schedule risk); the Stage-2 rubric/simulated-callee
 forward-dep must be honored or Stages 3/4/8/9 cascade.
+
+## 2026-06-23 18:10 — [VOICE] SESSION START (Stage 2 kickoff)
+Picking up: **Stage 2 — Conversation design (persona, dialog policy, literals) — A/B competition**, the first
+non-✅ stage (Stage 1 ✅, committed `v1.0.0-stage1` / `1bef4e7`). Read order completed: `PM_Methodology_Prompt.md`
+→ latest `PM_LOG.md` (18:00 SESSION END) → `CLAUDE.md` → `PLAN.md` (Stage 2) → `QA_checklist.md` (§4 `CONV*`,
+§8 `EVAL*`) → `NOTES.md`.
+State as read (to re-verify before building): Stage 1 green (107 tests); the two byte-exact literals locked in
+`app/config.py`; §9 set incl. the new `BUDGET_ALARM_ROUNDING_MARGIN`. **Stage 2 carries a DOUBLE forward-dep**
+(Red-Team Finding 5): the A/B must be scored by a computed `app/eval/rubric.py` AND driven by a seeded
+`app/eval/simulated_callee.py` — both land (minimal) at the START of Stage 2, enriched in Stage 6; the winner
+is decided on **computed numbers**, never eyeballed (`EVAL2`/`LEAK4`).
+Plan for this session: surface the two Stage-2 forks to Asaf — (1) build approach (cold executer vs PM-inline;
+bake-off integrity favors an executer building the variants while the PM independently owns the rubric +
+scoring), (2) the two A/B persona/dialog variant directions — then write the Stage-2 brief and proceed.
+Reviewer gate (`/code-review`) applies (literals + Policy 4/6). **Do not author personas before the
+rubric + simulated-callee infra lands.**
+
+## 2026-06-23 18:40 — [VOICE] SESSION END / HANDOFF (Stage 2 built + PM-verified)
+Did: Kicked off Stage 2 under **"Executer builds, PM scores"** (Asaf-chosen). Spawned ONE cold
+`general-purpose` executer (Asaf-authorized via the build-approach choice) which built
+`app/eval/{__init__,simulated_callee,rubric,bakeoff}.py` + `app/persona.py` (A/B via `build_policy`) +
+`tests/test_conversation.py` + a `config.value_prop_path()` resolver. **PM independently verified, NOT the
+executer's word:** re-ran the full suite (**150 passed/0 failed**), re-proved ENV4 import-safety, confirmed
+literals byte-exact + consumed-from-config (by identity), read every module, and **independently re-ran
+`run_bakeoff()` — reproduced the executer's table exactly + deterministic** (the integrity check). Reviewer
+gate done PM-inline (consistent with Stage 1): rubric is a genuinely computed, unbiased judge (negative guards
+hold); 2 minor non-blocking findings deferred to Stage 6.
+Bake-off (PM-reproduced): A & B **tie** on all four mandated criteria (book 0.2 / disclosure 0.8 / objection
+1.0 / compliance 1.0); B leaner on avg_turns (2.6 vs 3.2). **Provisional winner: B (Direct/value-first)** — but
+the four criteria TIED; the minimal substrate can't yet evaluate consultative-vs-direct booking impact.
+**Stage 6 MUST enrich `simulated_callee` + re-run the bake-off before locking the persona for live.**
+Status now: ✅ **Stage 2 code-complete & PM-verified (offline).** Work is **staged but NOT committed** (commit
+only on Asaf's go — established pattern). Ledger updated: `PLAN.md` (Stage 2 ✅), `NOTES.md` (handback + bake-off
++ verified facts).
+Next PM should: (1) get Asaf's go to **commit the Stage-2 baseline**; (2) **Stage 3 — agent callable functions +
+booking** (`TOOL1`–`TOOL5`, `BOOK1`–`BOOK3`) next; (3) carry forward the Stage-6 bake-off re-run obligation +
+the 2 minor eval findings; do NOT hard-lock variant B before the Stage-6 re-run.
+Watch out for / open: the persona winner (B) is **provisional**; `LIVE0` provisioning (Asaf's track).

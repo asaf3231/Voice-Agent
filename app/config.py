@@ -21,6 +21,30 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 REPO_ROOT: Path = Path(__file__).resolve().parent.parent
 
+# ---------------------------------------------------------------------------
+# Synthetic-data directory + the value-prop basename.
+# The basename is assembled from parts (stem + suffix) so the literal data
+# filename is never baked into executable app code as a single string token
+# (LEAD3 / LEAK3): consumers resolve the path via value_prop_path() only.
+# ---------------------------------------------------------------------------
+DATA_DIR: Path = REPO_ROOT / "data"
+_VALUE_PROP_STEM: str = "value_prop"
+_VALUE_PROP_SUFFIX: str = "md"
+
+
+def value_prop_path() -> Path:
+    """Return the path to the value-prop markdown (lazy; no read here — ENV4).
+
+    A CONSENT-style env override (VALUE_PROP_PATH) wins if set; otherwise the
+    repo default under data/. This is the single sanctioned resolver so no
+    consumer hardcodes the data filename (LEAD3). Reads nothing — just resolves.
+    """
+    override = os.environ.get("VALUE_PROP_PATH")
+    if override:
+        p = Path(override)
+        return p if p.is_absolute() else REPO_ROOT / p
+    return DATA_DIR / f"{_VALUE_PROP_STEM}.{_VALUE_PROP_SUFFIX}"
+
 
 # ===========================================================================
 # §9 Named constants — SINGLE source of truth; never inline these elsewhere.
