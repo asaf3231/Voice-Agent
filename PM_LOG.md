@@ -344,3 +344,40 @@ Watch out for / open: **recurring mid-stage session crashes** — each stage's e
 handback, recoverable PM-led, but watch for an uncommitted-work gap on resume (always re-verify disk vs the ledger).
 Carry-forward: Stage-6 `simulated_callee` enrichment + A/B re-run (winner **B** provisional); Stage-4 public-tunnel live
 webhook smoke owed at Stage 8; `LIVE0` provisioning is Asaf's parallel track + #1 schedule risk.
+
+## 2026-06-23 19:32 — [VOICE] SESSION START (Stage 4 reopened — independent gate caught 2 HIGH the inline review missed)
+Picking up: **Stage 4 post-commit hardening.** After this session committed the Stage-4 baseline (`013c395`) on the
+PM's *inline* `/code-review`, Asaf ran an **independent reviewer gate** that surfaced **two HIGH findings the inline pass
+missed** (reviewer ≠ PM, vindicated). Asaf directed: "verify his findings, check also by yourself, and fix it."
+State as read / re-verified against the running code (not the brief's word):
+- **#1 (blocking — core deliverable):** `server.tool_webhook` → `tools.dispatch(name, **args)` with ONLY model args, but
+  `check_availability`/`book_meeting` need an injected `calendar` (+ `now`) the server never supplied → both always
+  returned `invalid_input` → **no meeting bookable over the webhook.** Reproduced empirically. The offline suite missed
+  it (tool tests call the funcs directly with a calendar, never via `dispatch`).
+- **#2 (live, Stage-8-reachable):** `CalComCalendar.create_event` POSTs unconditionally (Mock is idempotent; contract +
+  Policy 5 mandate idempotency) → double-book on retry/redelivery. Confirmed by inspection.
+- Lower (deferred to Stage-6, already on the carry-forward): `_find_invented_claim` dead param, `_rng` unused,
+  `eval/__init__` docstring order.
+Plan: PM-led fix (no executer respawn) + TDD; re-verify; commit the fix as a follow-up to `013c395`.
+
+## 2026-06-23 19:32 — [VOICE] SESSION END / HANDOFF (both HIGH findings fixed + verified + committed)
+Did: **Verified both findings independently, then fixed both** (PM-led).
+- **#1:** `tools.dispatch` now injects the calendar/clock for the two booking tools (explicit `calendar=` for the offline
+  suite, else lazy live `_get_calendar()`; missing key → structured `calendar_unavailable`, never a crash). **No graded
+  tool signature changed** — internal router fix only. Added regression tests incl. **a real booking end-to-end over the
+  signed HTTP webhook** (`TestVoice3BookingOverWebhook`) + `TestDispatchInjectsCalendar`.
+- **#2:** `CalComCalendar.create_event` now idempotent via an in-process `lead_id|slot_key → event_id` cache (repeat call
+  = same id, no re-POST). Added `TestCalComIdempotency`.
+Verified numbers (PM-run): **251 passed / 0 failed** (+6 new); finding #1 reproduced-then-closed; ENV4 import-safe across
+7 modules, httpx not pulled, singletons `None`; `TOOL_REGISTRY` == `AGENT_TOOLS`; 5 tool signatures unchanged; both
+literals byte-exact == §9. Updated `PLAN.md` (Stage 4 note + footer, 251) + `NOTES.md` (decision + verified facts).
+Committed the fix on `main` (follow-up to the Stage-4 baseline).
+Status now: ✅ **Stage 4 fixed & re-verified.** The deliverable (book a meeting over the webhook) now works in the
+offline harness. Stages 0–4 ✅, 251 green.
+**Process change (logged in NOTES):** contract-touching stages get a **genuinely independent reviewer pass (not the PM's
+own inline eyes)** before ✅/commit — the inline shortcut is retired for graded stages. Stage 5 onward follows this.
+Next PM should: **Stage 5 — orchestration + consent + budget guard** under the loop, with an independent reviewer gate
+this time. On Asaf's "run the loop"/"continue", proceed.
+Watch out for / open: Stage-6 must close the 3 minor eval findings + the `simulated_callee` enrichment / A/B re-run
+(winner **B** provisional); Stage-4 public-tunnel live webhook smoke owed at Stage 8; recurring mid-stage crashes —
+re-verify disk vs ledger on resume; `LIVE0` is Asaf's parallel track + #1 schedule risk.

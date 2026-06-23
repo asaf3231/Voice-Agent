@@ -234,6 +234,59 @@ class TestVoice3ToolDispatch:
 
 
 # ---------------------------------------------------------------------------
+# Finding #1 regression — the booking tools must actually book over the webhook
+# (the core deliverable). The webhook passes ONLY the model's args; dispatch
+# injects the calendar via _get_calendar(), here monkeypatched to a MockCalendar
+# so the full HTTP → verify → dispatch → tool path runs offline. Before the fix
+# these returned invalid_input and no meeting could ever be booked over the wire.
+# ---------------------------------------------------------------------------
+
+class TestVoice3BookingOverWebhook:
+    """check_availability + book_meeting work end-to-end over the signed webhook."""
+
+    def test_check_availability_over_webhook(self, client, monkeypatch):
+        import app.tools as tools
+        from app.calendar_client import MockCalendar
+
+        monkeypatch.setattr(tools, "_get_calendar", lambda: MockCalendar())
+        resp = _post_signed(
+            client, "/webhook/tool",
+            {"name": "check_availability",
+             "arguments": {"lead_timezone": "America/New_York"}},
+            secret=WEBHOOK_SECRET,
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ok"] is True
+        assert body["data"]["count"] > 0
+
+    def test_book_meeting_over_webhook_books_a_real_event(self, client, monkeypatch):
+        import app.tools as tools
+        from app.calendar_client import MockCalendar
+
+        shared = MockCalendar()  # one calendar for both the lookup and the booking
+        monkeypatch.setattr(tools, "_get_calendar", lambda: shared)
+
+        avail = _post_signed(
+            client, "/webhook/tool",
+            {"name": "check_availability", "arguments": {}},
+            secret=WEBHOOK_SECRET,
+        ).json()
+        iso = avail["data"]["slots"][0]["start_utc"]
+
+        resp = _post_signed(
+            client, "/webhook/tool",
+            {"name": "book_meeting",
+             "arguments": {"lead_id": "lead-001", "slot_start_iso": iso}},
+            secret=WEBHOOK_SECRET,
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ok"] is True, f"booking failed over the webhook: {body}"
+        assert body["data"]["event_id"]
+
+
+# ---------------------------------------------------------------------------
 # Call-status webhook — resilient + masks phones
 # ---------------------------------------------------------------------------
 

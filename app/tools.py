@@ -42,6 +42,7 @@ from app.calendar_client import (
     CalendarProvider,
     SALES_CALENDAR_TZ,
     Slot,
+    _get_calendar,
 )
 from app.consent import mask_phone
 
@@ -335,11 +336,34 @@ assert all(callable(fn) for fn in TOOL_REGISTRY.values()), (
 )
 
 
-def dispatch(name: str, /, **kwargs: Any) -> ToolResult:
+# Tools that need a calendar backend (and a clock) INJECTED at runtime. Over the
+# webhook the Realtime model supplies only business arguments (lead_id, slot,
+# timezone); the calendar and the clock are infrastructure the runtime must inject
+# — the model neither can nor should. Without this injection every booking webhook
+# returned `invalid_input` ("missing keyword-only argument 'calendar'") and NO
+# meeting could ever be booked over the wire, defeating the core deliverable.
+_CALENDAR_TOOLS = frozenset({"check_availability", "book_meeting"})
+
+
+def dispatch(
+    name: str,
+    /,
+    *,
+    calendar: CalendarProvider | None = None,
+    now: datetime | None = None,
+    **kwargs: Any,
+) -> ToolResult:
     """Route a tool-call by name to its function (the single dispatch point).
 
-    An unknown tool name returns a structured error — never a KeyError/crash
-    (§6 / mirrors the Stage-4 webhook 'unknown tool → structured error').
+    This is the one runtime tool-invocation chokepoint the webhook (and the future
+    campaign runner) call. The model passes only business args; for the booking
+    tools (`check_availability` / `book_meeting`) the calendar backend — and, for
+    `check_availability`, the clock — are INJECTED here: an explicit *calendar* (the
+    offline suite injects a MockCalendar) or, when none is given, the lazy live
+    Cal.com client via `_get_calendar()`. A missing live key (or any build failure)
+    surfaces as a structured `calendar_unavailable`, never a crash (§6). An unknown
+    tool name or bad/missing args likewise return a structured error — never a
+    KeyError/TypeError crash.
     """
     fn = TOOL_REGISTRY.get(name)
     if fn is None:
@@ -348,6 +372,19 @@ def dispatch(name: str, /, **kwargs: Any) -> ToolResult:
             error="unknown_tool",
             message=f"no such tool {name!r}; known: {sorted(TOOL_REGISTRY)}",
         )
+
+    # Inject runtime infrastructure the model cannot (and must not) supply.
+    if name in _CALENDAR_TOOLS:
+        if calendar is None:
+            try:
+                calendar = _get_calendar()  # lazy live client; never built at import
+            except Exception as exc:  # noqa: BLE001 — missing key/build → data (§6)
+                return ToolResult(ok=False, error="calendar_unavailable",
+                                  message=str(exc))
+        kwargs["calendar"] = calendar
+        if name == "check_availability":
+            kwargs["now"] = now if now is not None else datetime.now(SALES_CALENDAR_TZ)
+
     try:
         return fn(**kwargs)
     except TypeError as exc:

@@ -173,6 +173,36 @@ arithmetic exact. This is the reviewer-flagged graded-contract change, now autho
 **Impact:** No behavior change (margin stays $0.01); the pre-call gate (`budget_permits`) remains exact and
 does not use this margin. Suite re-verified **107 green**. The only §9 constant added post-genesis.
 
+### 2026-06-23 — Stage 4 post-commit fix: two HIGH gate findings (dispatch calendar injection + CalCom idempotency)  *(PM-verified)*
+**Context (reviewer ≠ PM, vindicated):** after the Stage-4 baseline was committed (`013c395`), an **independent
+reviewer gate** found **two HIGH issues** the prior PM's *inline* `/code-review` missed — exactly why the methodology
+forbids the PM being its own reviewer. This session **independently re-verified both against the running code, then
+fixed both** (Asaf-directed: "verify his findings, check also by yourself, and fix it").
+- **HIGH #1 (blocking — broke the core deliverable):** the webhook calls `tools.dispatch(name, **args)` with ONLY the
+  model's args, but `check_availability` / `book_meeting` require an injected `calendar` (and `check_availability` a
+  `now`) the server never supplied → **every booking webhook returned `invalid_input` → no meeting could ever be booked
+  over the wire.** The offline suite missed it because the tool tests call the functions directly with a calendar
+  injected, never through `dispatch`. **Confirmed empirically** (`dispatch('book_meeting', …)` → "missing keyword-only
+  argument 'calendar'"). **Fix:** `dispatch` now injects the calendar/clock for the two booking tools — an explicit
+  `calendar=` (offline suite passes `MockCalendar`) or the lazy live `_get_calendar()`; a missing live key →
+  structured `calendar_unavailable`, never a crash. **The 5 graded tool signatures are unchanged** — only *how dispatch
+  supplies* the dependency changed (an internal router fix, not a graded-contract change). New tests prove a real
+  booking end-to-end **over the signed HTTP webhook** (`tests/test_server.py::TestVoice3BookingOverWebhook`).
+- **HIGH #2 (live-only, Stage-8-reachable):** `CalComCalendar.create_event` POSTed unconditionally (the `MockCalendar`
+  is idempotent; the contract docstring + Policy 5 mandate idempotency) → a retry / webhook redelivery would
+  **double-book**. **Fix:** an in-process idempotency cache (`lead_id|slot_key → event_id`) on the long-lived client
+  instance — a repeat call returns the same id without re-POSTing. New test proves only one POST for two identical calls.
+- **Lower (deferred to Stage-6 eval rework, independently confirmed — NOT fixed here):** `rubric._find_invented_claim`
+  dead `claims` param + overclaiming docstring; `simulated_callee._rng` unused; `eval/__init__` stage-order docstring.
+  These were already logged in the Stage-2 handback's "2 minor findings" carry-forward; Stage 6 closes them.
+**Confirmed CLEAN by the gate (don't re-touch):** import-safety (ENV4, lazy singletons None), Voice/Calendar interface
+signatures (intact, sole egress), dispatch identity (== AGENT_TOOLS), byte-exact literals (consumed by identity), the
+webhook HMAC verify (fail-closed, constant-time, raw-body — no bypass), budget/consent boundaries, anti-leakage
+(no secret/PAN/key), PII masking, LEAK3, eval integrity (computed, no winner), OS-agnostic paths.
+**Lesson recorded:** Stage 4 was committed on the PM's inline review alone; an independent gate then caught a
+deliverable-breaking bug. **Going forward, contract-touching stages get a genuinely independent reviewer pass (not the
+PM's own eyes) before the stage is marked ✅/committed** — the inline shortcut is retired for graded stages.
+
 ---
 
 ## Named constants (single source of truth — mirrored in `app/config.py`)
@@ -265,6 +295,20 @@ does not use this margin. Suite re-verified **107 green**. The only §9 constant
     structured error at HTTP 200, no traceback; phone masked.
   - **Diff is additive + no graded contract changed:** the only deletions are the legitimate `ENV4` subprocess
     import-list extension to cover `vapi_client` + `server`.
+
+- **2026-06-23 19:32 — Stage 4 HIGH-findings fix verified (PM-run against live code):**
+  - **Full suite: 251 passed / 0 failed** (245 + 6 new regression tests). Deterministic.
+  - **Finding #1 empirically reproduced before the fix** (`dispatch('book_meeting', lead_id=…, slot_start_iso=…)` →
+    `invalid_input` "missing keyword-only argument 'calendar'"; `check_availability` → missing 'calendar' and 'now')
+    and **closed after** (with an injected/auto-resolved calendar both tools return ok=True with slots/event_id).
+  - **End-to-end over the signed HTTP webhook:** `POST /webhook/tool` for `check_availability` then `book_meeting`
+    (model args only; `_get_calendar` monkeypatched to a shared `MockCalendar`) → a real `event_id` is returned — the
+    core deliverable now works over the wire.
+  - **Finding #2:** two identical `CalComCalendar.create_event` calls (stubbed client) → same `event_id`, **exactly one
+    POST** (no double-book).
+  - **No regression to graded contracts:** ENV4 import-safe across 7 modules; httpx still not pulled; both lazy
+    singletons `None`; `TOOL_REGISTRY` == `AGENT_TOOLS`; the 5 tool signatures unchanged (only `dispatch`'s internal
+    injection changed).
 
 ---
 

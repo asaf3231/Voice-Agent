@@ -42,7 +42,7 @@ Status values: ⬜ Not started · 🔄 In progress · 🟡 Awaiting verification
 | 1 | Environment, secrets, budget & synthetic inputs | `ENV1`–`ENV4`, `SEC1`–`SEC4`, `LEAD1`–`LEAD3` | ✅ | ✅ Complete (2026-06-23, 105 green; offline scope — `LIVE0` Asaf-parallel) |
 | 2 | Conversation design (persona, dialog policy, literals) | `CONV1`–`CONV6` | ✅ | ✅ Complete (2026-06-23, 150 green; winner **B** provisional pending Stage-6 re-run) |
 | 3 | Agent callable functions + booking | `TOOL1`–`TOOL5`, `BOOK1`–`BOOK3` | ✅ | ✅ Complete (2026-06-23, 201 green; OQ-VOICE-3 resolved) |
-| 4 | Voice-platform integration (Vapi + Realtime + webhooks) | `VOICE1`–`VOICE5`, `CON2`–`CON3` | ✅ | ✅ Complete (2026-06-23, 245 green; offline scope — public-tunnel live smoke owed at Stage 8) |
+| 4 | Voice-platform integration (Vapi + Realtime + webhooks) | `VOICE1`–`VOICE5`, `CON2`–`CON3` | ✅ | ✅ Complete (2026-06-23, **251 green**; offline scope — public-tunnel live smoke owed at Stage 8; **2 HIGH post-commit gate findings fixed** — see footer) |
 | 5 | Outbound orchestration + consent + budget guard | `CALL1`–`CALL4`, `CON1`, `CON4`, `CON5`, `SEC3` | ✅ | ⬜ Not started |
 | 6 | Offline evaluation harness | `EVAL1`–`EVAL6` | — | ⬜ Not started |
 | 7 | Anti-leakage & packaging hardening | `LEAK1`–`LEAK5`, `PKG1`–`PKG4` | ✅ | ⬜ Not started |
@@ -261,11 +261,17 @@ Do not mark a stage complete if its QA checks were only drafted but not run.
 - **Status:** **Stages 0–4 ✅ (all offline, PM-verified & committed).** Running the **autonomous loop** (commit +
   auto-advance per stage; halt only on the 3 triggers + Stage 8/9 coordination). Commits: `05cfee4` (spine) ·
   `1bef4e7` (`v1.0.0-stage1`) · `f867207` (Stage 2 A/B) · `405a083` (Stage 3 tools + booking; OQ-VOICE-3 resolved) ·
-  Stage 4 (Vapi adapter + Realtime assistant + signature-verified webhooks). **245 tests green.** Stage 4 was
-  **recovered PM-led** from a prior session's mid-stage crash (executer finished + wrote its handback; this session
-  did verify/review/commit/log). **Carry-forward:** Stage-6 must enrich `simulated_callee` + re-run the A/B (winner
-  **B** is provisional) and clear 2 minor eval findings; the Stage-4 public-tunnel live webhook smoke test is owed at
-  Stage 8. `LIVE0` provisioning owned by Asaf (not a code gate).
+  Stage 4 (Vapi adapter + Realtime assistant + signature-verified webhooks) + a Stage-4 **post-commit fix** of two
+  HIGH gate findings. **251 tests green.** Stage 4 was **recovered PM-led** from a prior session's mid-stage crash;
+  then an **independent reviewer gate caught two HIGH issues the prior inline review missed** — both now fixed
+  (NOTES 2026-06-23 "Stage 4 post-commit fix"): (#1, blocking) `tools.dispatch` now injects the calendar/clock for the
+  booking tools so `check_availability`/`book_meeting` actually work over the webhook (was always `invalid_input` → no
+  booking possible); (#2, live) `CalComCalendar.create_event` is now idempotent (no double-book on retry/redelivery).
+  **Process change:** contract-touching stages now get a genuinely independent reviewer pass (not the PM's own eyes)
+  before ✅/commit — the inline shortcut is retired for graded stages. **Carry-forward:** Stage-6 must enrich
+  `simulated_callee` + re-run the A/B (winner **B** provisional) and clear 3 minor eval findings (the 2 prior + the
+  `_find_invented_claim`/`_rng`/`__init__`-docstring trio the gate re-confirmed); the Stage-4 public-tunnel live webhook
+  smoke test is owed at Stage 8. `LIVE0` provisioning owned by Asaf (not a code gate).
 - **Decisions locked:** service-only repo (no notebook); Vapi (Retell-swappable); OpenAI Realtime brain;
   lean live calling under a hard $50 cap; secrets+PII+fabricated-outcomes are the anti-leakage core;
   **operating model — `general-purpose` executers + native `/code-review` & `/security-review` gates;

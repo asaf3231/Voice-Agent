@@ -289,14 +289,71 @@ class TestTool5EndCallAndDispatch:
         assert res.ok is False
         assert res.error == "unknown_tool"
 
-    def test_dispatch_bad_args_structured_not_crash(self):
-        """A known tool called with bad/missing args → structured error, no crash."""
-        res = dispatch("book_meeting")  # missing required kwargs
+    def test_dispatch_bad_args_structured_not_crash(self, calendar):
+        """A known tool called with bad/missing business args → structured, no crash.
+
+        The calendar is injected (as the runtime does); the model still omitted the
+        required lead_id/slot_start_iso → structured invalid_input.
+        """
+        res = dispatch("book_meeting", calendar=calendar)  # missing lead_id/slot_start_iso
         assert res.ok is False
         assert res.error == "invalid_input"
 
     def test_registry_values_callable(self):
         assert all(callable(fn) for fn in TOOL_REGISTRY.values())
+
+
+# ---------------------------------------------------------------------------
+# Finding #1 regression — booking tools must actually work through dispatch
+# (the webhook passes ONLY the model's args; the calendar/clock are injected).
+# ---------------------------------------------------------------------------
+
+class TestDispatchInjectsCalendar:
+    """Over the webhook the model supplies only business args; dispatch injects the
+    calendar (and clock for check_availability). Before the fix these always returned
+    invalid_input and no meeting could ever be booked over the wire."""
+
+    def test_booking_tools_work_with_injected_calendar(self, calendar, frozen_clock):
+        """An explicit calendar (the offline path) lets both booking tools succeed."""
+        avail = dispatch(
+            "check_availability", calendar=calendar, now=frozen_clock,
+            lead_timezone="America/New_York",
+        )
+        assert avail.ok is True
+        assert avail.data["count"] > 0
+        iso = avail.data["slots"][0]["start_utc"]
+        booked = dispatch(
+            "book_meeting", calendar=calendar, lead_id="lead-001", slot_start_iso=iso
+        )
+        assert booked.ok is True
+        assert booked.data["event_id"]
+
+    def test_booking_tools_autoresolve_when_calendar_not_injected(self, monkeypatch):
+        """With NO calendar passed (exactly what the webhook does), dispatch resolves
+        it via the lazy live getter — here monkeypatched to a shared MockCalendar."""
+        shared = MockCalendar()
+        monkeypatch.setattr(tools, "_get_calendar", lambda: shared)
+        avail = dispatch("check_availability", lead_timezone="UTC")  # model args only
+        assert avail.ok is True
+        assert avail.data["count"] > 0
+        iso = avail.data["slots"][0]["start_utc"]
+        booked = dispatch(
+            "book_meeting", lead_id="lead-001", slot_start_iso=iso  # model args only
+        )
+        assert booked.ok is True
+        assert booked.data["event_id"]
+
+    def test_calendar_unavailable_is_structured_not_crash(self, monkeypatch):
+        """If no calendar is injected and the live client can't be built, dispatch
+        returns a structured calendar_unavailable — never a crash (§6)."""
+        def _boom():
+            raise ValueError("CALCOM_API_KEY is required")
+        monkeypatch.setattr(tools, "_get_calendar", _boom)
+        res = dispatch(
+            "book_meeting", lead_id="L1", slot_start_iso="2026-07-01T15:00:00+00:00"
+        )
+        assert res.ok is False
+        assert res.error == "calendar_unavailable"
 
 
 # ---------------------------------------------------------------------------

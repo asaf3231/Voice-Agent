@@ -185,6 +185,52 @@ class TestBook3ConflictAndIdempotency:
 
 
 # ---------------------------------------------------------------------------
+# Finding #2 — CalComCalendar.create_event idempotency (contract / Policy 5)
+# ---------------------------------------------------------------------------
+
+class TestCalComIdempotency:
+    """The live client must honor the CalendarProvider idempotency contract: a repeat
+    create_event for the same lead+slot returns the SAME id and does NOT POST again,
+    so a retry / webhook redelivery cannot double-book (the live API POSTs blindly)."""
+
+    class _FakeResp:
+        status_code = 200
+
+        def raise_for_status(self):  # no-op (200)
+            pass
+
+        def json(self):
+            return {"id": "calcom-evt-1"}
+
+    def _calcom(self, monkeypatch):
+        monkeypatch.setenv("CALCOM_API_KEY", "test-key")
+        monkeypatch.setenv("CALCOM_EVENT_TYPE_ID", "123")
+        return CalComCalendar()
+
+    def test_repeat_same_lead_slot_returns_same_id_without_reposting(
+        self, monkeypatch, frozen_clock
+    ):
+        cal = self._calcom(monkeypatch)
+        posts: list = []
+
+        class _FakeClient:
+            def post(_self, *a, **k):
+                posts.append((a, k))
+                return TestCalComIdempotency._FakeResp()
+
+        monkeypatch.setattr(cal, "_get_client", lambda: _FakeClient())
+        slot = Slot(
+            start=frozen_clock,
+            end=frozen_clock + timedelta(minutes=BOOKING_SLOT_MINUTES),
+        )
+        r1 = cal.create_event(lead_id="lead-001", slot=slot, summary="x")
+        r2 = cal.create_event(lead_id="lead-001", slot=slot, summary="x")
+        assert r1.ok and r2.ok
+        assert r1.event_id == r2.event_id == "calcom-evt-1"
+        assert len(posts) == 1, "a repeat booking must NOT POST again (no double-book)"
+
+
+# ---------------------------------------------------------------------------
 # Import-safety / live-client gating (ENV4 / CON4)
 # ---------------------------------------------------------------------------
 

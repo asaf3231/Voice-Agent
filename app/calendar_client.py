@@ -242,6 +242,12 @@ class CalComCalendar:
         self._api_key = require_setting("CALCOM_API_KEY")
         self._event_type_id = require_setting("CALCOM_EVENT_TYPE_ID")
         self._client = None  # httpx client built lazily on first request
+        # Idempotency guard (CalendarProvider contract / Policy 5): lead_id|slot_key
+        # -> event_id for bookings already created by THIS client. A retry / webhook
+        # redelivery for the same lead+slot returns the same id without POSTing again
+        # (the live API POSTs unconditionally, so without this a double-call would
+        # double-book — Finding #2).
+        self._booked: dict[str, str] = {}
 
     def _get_client(self):
         """Build the httpx client on first use (kept off the import path)."""
@@ -288,7 +294,17 @@ class CalComCalendar:
         slot: Slot,
         summary: str,
     ) -> BookingResult:
-        """Create a Cal.com booking (live). Any failure → structured BookingResult."""
+        """Create a Cal.com booking (live), idempotently. Any failure → structured.
+
+        Idempotency (Finding #2 / contract / Policy 5): a repeat call for the same
+        lead_id + slot returns the SAME event id and does NOT POST again, so a retry
+        or webhook redelivery cannot double-book.
+        """
+        # Idempotency guard: same lead + slot already booked by this client → reuse.
+        event_key = f"{lead_id}|{slot.key()}"
+        cached = self._booked.get(event_key)
+        if cached is not None:
+            return BookingResult(ok=True, event_id=cached)
         try:
             client = self._get_client()
             resp = client.post(
@@ -311,6 +327,7 @@ class CalComCalendar:
             if not event_id:
                 return BookingResult(ok=False, reason="calendar_error",
                                      detail="Cal.com returned no booking id")
+            self._booked[event_key] = event_id  # remember for idempotency
             return BookingResult(ok=True, event_id=event_id)
         except Exception as exc:  # noqa: BLE001 — surface as data (§6)
             return BookingResult(ok=False, reason="calendar_error", detail=str(exc))
