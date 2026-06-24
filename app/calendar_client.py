@@ -23,6 +23,7 @@ module-level Cal.com singleton (`_calendar`) is None at import and only the lazy
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Protocol, runtime_checkable
@@ -30,8 +31,11 @@ from typing import Protocol, runtime_checkable
 from app.config import (
     BOOKING_LOOKAHEAD_DAYS,
     BOOKING_SLOT_MINUTES,
+    get_setting,
     require_setting,
 )
+
+logger = logging.getLogger(__name__)
 
 # The sales calendar's authoritative timezone. Bookings are stored/compared in
 # this zone; the lead's local tz is resolved against it (TOOL1/BOOK1, Finding 6).
@@ -233,7 +237,12 @@ class CalComCalendar:
     other live paths and is never used in the default offline suite (CON4).
     """
 
-    BASE_URL = "https://api.cal.com/v1"
+    BASE_URL = "https://api.cal.com/v2"
+    # Cal.com v2 pins a date-versioned contract PER endpoint (verified live
+    # 2026-06-24): /slots needs 2024-09-04; /bookings needs 2026-02-25. v1 is
+    # decommissioned (HTTP 410).
+    SLOTS_API_VERSION = "2024-09-04"
+    BOOKINGS_API_VERSION = "2026-02-25"
 
     def __init__(self) -> None:
         # require_setting raises a clean ValueError if the secret is absent — a
@@ -250,13 +259,17 @@ class CalComCalendar:
         self._booked: dict[str, str] = {}
 
     def _get_client(self):
-        """Build the httpx client on first use (kept off the import path)."""
+        """Build the httpx client on first use (kept off the import path).
+
+        v2 authenticates with a Bearer token header (v1 used an apiKey query param).
+        """
         if self._client is None:
             import httpx  # lazy: importing this module must not pull httpx in
 
             self._client = httpx.Client(
                 base_url=self.BASE_URL,
-                timeout=httpx.Timeout(10.0),
+                headers={"Authorization": f"Bearer {self._api_key}"},
+                timeout=httpx.Timeout(15.0),
             )
         return self._client
 
@@ -267,24 +280,28 @@ class CalComCalendar:
         lookahead_days: int = BOOKING_LOOKAHEAD_DAYS,
         slot_minutes: int = BOOKING_SLOT_MINUTES,
     ) -> list[Slot]:
-        """Fetch free slots from Cal.com (live). Errors → empty list, never a crash."""
+        """Fetch free slots from Cal.com v2 (live). Errors → empty list (logged), never a crash."""
         try:
             client = self._get_client()
             start = now.astimezone(SALES_CALENDAR_TZ)
             end = start + timedelta(days=lookahead_days)
             resp = client.get(
                 "/slots",
+                headers={"cal-api-version": self.SLOTS_API_VERSION},
                 params={
-                    "apiKey": self._api_key,
                     "eventTypeId": self._event_type_id,
-                    "startTime": start.isoformat(),
-                    "endTime": end.isoformat(),
+                    "start": start.strftime("%Y-%m-%d"),
+                    "end": end.strftime("%Y-%m-%d"),
+                    "timeZone": "UTC",
                 },
             )
-            resp.raise_for_status()
-            payload = resp.json()
-            return _parse_calcom_slots(payload, slot_minutes=slot_minutes)
-        except Exception:  # noqa: BLE001 — a live failure is data, not a crash (§6)
+            if resp.status_code >= 400:
+                # Surface (don't silently swallow) — masked the v1-decommission 410.
+                logger.warning("Cal.com /slots %s: %s", resp.status_code, resp.text[:300])
+                return []
+            return _parse_calcom_slots(resp.json(), slot_minutes=slot_minutes)
+        except Exception as exc:  # noqa: BLE001 — a live failure is data, not a crash (§6)
+            logger.warning("Cal.com /slots request failed: %s", exc)
             return []
 
     def create_event(
@@ -294,36 +311,48 @@ class CalComCalendar:
         slot: Slot,
         summary: str,
     ) -> BookingResult:
-        """Create a Cal.com booking (live), idempotently. Any failure → structured.
+        """Create a Cal.com v2 booking (live), idempotently. Any failure → structured.
 
         Idempotency (Finding #2 / contract / Policy 5): a repeat call for the same
         lead_id + slot returns the SAME event id and does NOT POST again, so a retry
         or webhook redelivery cannot double-book.
+
+        v2 requires an `attendee` (name/email/timeZone). The lead's contact email is
+        not in the synthetic data, so it defaults to a synthetic per-lead address;
+        set CALCOM_ATTENDEE_EMAIL / CALCOM_ATTENDEE_NAME / CALCOM_ATTENDEE_TIMEZONE
+        in the env to book against a real inbox (e.g. for the live demo).
         """
         # Idempotency guard: same lead + slot already booked by this client → reuse.
         event_key = f"{lead_id}|{slot.key()}"
         cached = self._booked.get(event_key)
         if cached is not None:
             return BookingResult(ok=True, event_id=cached)
+
+        attendee = {
+            "name": get_setting("CALCOM_ATTENDEE_NAME") or f"Alta Prospect {lead_id}",
+            "email": get_setting("CALCOM_ATTENDEE_EMAIL") or f"aria-demo+{lead_id}@example.com",
+            "timeZone": get_setting("CALCOM_ATTENDEE_TIMEZONE") or "UTC",
+        }
         try:
             client = self._get_client()
             resp = client.post(
                 "/bookings",
-                params={"apiKey": self._api_key},
+                headers={"cal-api-version": self.BOOKINGS_API_VERSION},
                 json={
                     "eventTypeId": int(self._event_type_id),
-                    "start": slot.start.astimezone(SALES_CALENDAR_TZ).isoformat(),
-                    "end": slot.end.astimezone(SALES_CALENDAR_TZ).isoformat(),
+                    "start": slot.start.astimezone(timezone.utc).isoformat(),
+                    "attendee": attendee,
                     "metadata": {"lead_id": lead_id},
-                    "title": summary,
                 },
             )
             if resp.status_code == 409:
                 return BookingResult(ok=False, reason="slot_taken",
                                      detail="Cal.com reports the slot is no longer free")
-            resp.raise_for_status()
-            data = resp.json()
-            event_id = str(data.get("id") or data.get("uid") or "")
+            if resp.status_code >= 400:
+                return BookingResult(ok=False, reason="calendar_error",
+                                     detail=f"Cal.com /bookings {resp.status_code}: {resp.text[:300]}")
+            data = resp.json().get("data") or {}
+            event_id = str(data.get("uid") or data.get("id") or "")
             if not event_id:
                 return BookingResult(ok=False, reason="calendar_error",
                                      detail="Cal.com returned no booking id")
@@ -334,13 +363,16 @@ class CalComCalendar:
 
 
 def _parse_calcom_slots(payload: dict, *, slot_minutes: int) -> list[Slot]:
-    """Map a Cal.com /slots response into our Slot list (best-effort, total)."""
+    """Map a Cal.com **v2** /slots response into our Slot list (best-effort, total).
+
+    v2 shape: {"data": {"YYYY-MM-DD": [{"start": "ISO±offset"}, ...], ...}}.
+    """
     slots: list[Slot] = []
-    raw = payload.get("slots", {}) if isinstance(payload, dict) else {}
+    data = payload.get("data", {}) if isinstance(payload, dict) else {}
     step = timedelta(minutes=slot_minutes)
-    for _day, items in (raw.items() if isinstance(raw, dict) else []):
+    for _day, items in (data.items() if isinstance(data, dict) else []):
         for item in items or []:
-            time_str = item.get("time") if isinstance(item, dict) else None
+            time_str = item.get("start") if isinstance(item, dict) else None
             if not time_str:
                 continue
             try:

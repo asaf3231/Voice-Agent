@@ -200,7 +200,8 @@ class TestCalComIdempotency:
             pass
 
         def json(self):
-            return {"id": "calcom-evt-1"}
+            # Cal.com v2 wraps the booking under "data" with id/uid.
+            return {"status": "success", "data": {"id": 1, "uid": "calcom-evt-1"}}
 
     def _calcom(self, monkeypatch):
         monkeypatch.setenv("CALCOM_API_KEY", "test-key")

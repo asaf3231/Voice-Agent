@@ -628,3 +628,23 @@ text is byte-exact/correct; this is a **voice pronunciation** matter (fix in Vap
 *accepted* the call (cost is finalized only after it ends). Real cost is $0.4488 (from the API/receipt). **Follow-up fix
 needed:** capture cost post-call (via `capture_receipts.py`) and reconcile it into the ledger, or don't trust an immediate
 `cost=0`.
+
+### 2026-06-24 — Cal.com v1 DECOMMISSIONED → migrated CalComCalendar to API v2 (verified live, no phone call)  *(PM)*
+**Found by testing the tool directly against live Cal.com (Asaf's point — verify tools WITHOUT calling the prospect):**
+`GET api.cal.com/v1/slots` → **HTTP 410 "API v1 has been decommissioned. Please migrate to API v2."** Our `CalComCalendar`
+used v1 → every `check_availability`/`book_meeting` failed. (And `list_slots` swallowed the 410 to `[]`, so it looked like
+"0 slots" — a diagnosability gap, now logged.)
+**Migration (live-verified formats, not guessed):** base `https://api.cal.com/v2`; **Bearer** auth header (v1 used an
+`apiKey` query param); **per-endpoint version header** — `/slots` needs `cal-api-version: 2024-09-04`, `/bookings` needs
+`2026-02-25` (both confirmed against the live API; 2026-02-25 on /slots → 404). `/slots` params `eventTypeId/start/end
+(YYYY-MM-DD)/timeZone`, response `{"data":{"YYYY-MM-DD":[{"start":"ISO±off"}]}}` (rewrote `_parse_calcom_slots`).
+`/bookings` body `{start(UTC ISO), attendee{name,email,timeZone}, eventTypeId}`, response `{"data":{"id","uid"}}`.
+**Attendee:** v2 requires one; the synthetic lead data has no email, so it defaults to a synthetic per-lead address —
+overridable via env `CALCOM_ATTENDEE_EMAIL`/`_NAME`/`_TIMEZONE` (set a real inbox for the live demo). The
+`CalendarProvider` interface signature is **unchanged** (the attendee is derived inside the impl).
+**Live verification (read + write, NO phone call):** `check_availability` → **239 real slots** (UTC + lead-local tz);
+`book_meeting` → created a real Cal.com event (`uid hNvdynrtijmtAnQS4V7b6n`) → **cancelled it (HTTP 200)** to keep the
+calendar clean. Idempotency cache + 409→slot_taken preserved; non-2xx now returns the Cal.com error body (no silent
+swallow). Offline suite **420 green** (MockCalendar default unchanged; the Stage-8 idempotency test's fake updated to the
+v2 `{"data":{...}}` shape). **All booking blockers resolved** (Vapi result-envelope + Cal.com v2). Remaining: independent
+review of the live-path changes, the cost/ledger post-call reconciliation, and a final end-to-end live phone demo.
