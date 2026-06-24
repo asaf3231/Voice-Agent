@@ -26,6 +26,7 @@ from app.config import (
 from app.calendar_client import MockCalendar, SALES_CALENDAR_TZ
 from app import tools
 from app.tools import (
+    MAX_SLOTS_OFFERED,
     TOOL_REGISTRY,
     ToolResult,
     book_meeting,
@@ -67,6 +68,23 @@ class TestTool1CheckAvailability:
         res = check_availability(calendar=calendar, now=frozen_clock)
         assert isinstance(res, ToolResult)
         assert res.ok is True
+
+    def test_caps_slots_to_max_offered(self, calendar, frozen_clock):
+        """A LIVE calendar returns hundreds of slots; check_availability must cap to
+        MAX_SLOTS_OFFERED so the tool result stays small (the live booking blocker:
+        239 slots / 49KB → 'No result returned'). The mock returns many slots here.
+        """
+        raw = len(calendar.list_slots(now=frozen_clock))
+        assert raw > MAX_SLOTS_OFFERED, "fixture should return more than the cap to be meaningful"
+        res = check_availability(calendar=calendar, now=frozen_clock)
+        assert res.data["count"] == MAX_SLOTS_OFFERED
+        assert len(res.data["slots"]) == MAX_SLOTS_OFFERED
+
+    def test_no_cap_when_max_slots_zero(self, calendar, frozen_clock):
+        """max_slots=0 disables the cap (returns all free slots)."""
+        raw = len(calendar.list_slots(now=frozen_clock))
+        res = check_availability(calendar=calendar, now=frozen_clock, max_slots=0)
+        assert res.data["count"] == raw
         assert res.data["count"] > 0
         assert len(res.data["slots"]) == res.data["count"]
 

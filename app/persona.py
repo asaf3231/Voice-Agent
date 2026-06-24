@@ -527,4 +527,3 @@ def build_system_prompt(
         f"no, say exactly: \"{FAILSAFE_HANGUP_LINE}\" and end the call. Never improvise "
         "a non-compliant promise."
     )
-    
