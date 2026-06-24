@@ -729,3 +729,20 @@ Watch out for / open: graded change owed a review; live calls are human-coordina
 has the older stale pipeline notes elsewhere (not reconciled this session — out of scope of the ask); the qualify/
 disclosure batch from 13:28 is still uncommitted/unreviewed. Out of scope (by Asaf): the LangGraph runner + a real
 RTP/softphone bridge.
+
+## 2026-06-24 15:30 — [VOICE] NOTE (committed; appended post-SESSION-END for ledger accuracy)
+Asaf chose **"review prior batch, then commit both."** Ran the independent reviewer gate (native `/code-review`,
+high effort) on BOTH the Stage-8.5 slice and the entangled prior qualify/disclosure batch (they share
+config.py/rubric.py/CLAUDE.md/NOTES.md and can't be split without interactive add). Outcomes:
+- **Stage-8.5 slice:** graded integrity clean; **2 findings fixed** (over-broad `slot_reoffer_handled` markers
+  mis-flagged acceptances as time-rejections — tightened + regression test added; `mock_bridge.garble` seed now
+  sources `config.RANDOM_SEED` per §8).
+- **Prior qualify/disclosure batch:** disclosure/CON3 verified byte-exact-consistent; AGENT_TOOLS=4 (end_call
+  retired, D9) consistent config↔spec. **3 correctness fixes:** (1) `qualify` no longer routes a substantive-but-
+  unmapped answer to `emphasize=None`/"lead with None" (now asks to clarify); (2) `score_call` locates the pitch
+  positionally (robust to a missing `secondsFromStart`) + skips backchannel discovery answers; (3) `vapi_client`
+  omits `metadata.lead_id/lead_timezone` when unset (no JSON null).
+**Committed both as one combined commit `8bef263` on `main`** (per this repo's main-baseline convention + Asaf's
+explicit go). Working tree then clean. Verified: **523 passed / 1 skipped / 1 xfailed**; ENV4 import-safe.
+**Still open (unchanged):** live stress execution is human-coordinated (PM will NOT auto-place calls) and gated on
+the **recording-notice compliance** check for any added consented number. Not pushed (local only).

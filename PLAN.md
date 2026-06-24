@@ -278,14 +278,16 @@ bounded, sequential, gated stress lane).
   disclosure-pinned) + `STR-P*` (webhook TTFB SLO, STT resilience, slow-backend no-phantom) pass.
 - [x] LIVE-gating proven OFFLINE — `STR-LIVE`: the lane halts at `MAX_LIVE_STRESS_CALLS` + the $15 live
   reserve and refuses non-consented numbers (spy-proven no dial past a gate).
-- [ ] **Graded-contract change owed an INDEPENDENT review before commit** (corrected post-Stage-4
-  process): `MAX_LIVE_STRESS_CALLS` (§9), the `budget.default_ledger_path()` accessor, the live lane.
+- [x] **Independent review (corrected post-Stage-4 process) — DONE:** graded integrity clean; 2 findings
+  fixed in the slice (over-broad slot-reoffer markers; `garble` seed → `RANDOM_SEED`). The same gate also
+  ran on the entangled prior qualify/disclosure batch → 3 fixes (qualify unmapped-route, score_call pitch
+  location, vapi metadata null). **Committed `8bef263`.**
 - [ ] **Live execution — human-coordinated (PM will NOT auto-place calls)** + a **recording-notice
   compliance gate**: confirm the 2–3 added consented numbers are all one-party-consent jurisdictions, or
   restore the spoken recording notice in `DISCLOSURE_LINE` (CON3) before any two-party number.
-**Status:** 🔄 In progress — **Offline + MOCK ✅ (PM-verified: 522 passed / 1 skipped / 1 xfailed, from a
-474 baseline; `ENV4` re-proven)**; live lane scaffolded + gating offline-proven; live calls pending the
-independent review + Asaf's coordination. · **Reviewer gate:** owed (graded constant + budget accessor).
+**Status:** 🔄 Offline + MOCK ✅ **committed `8bef263`** (PM-verified: **523 passed / 1 skipped / 1 xfailed**,
+from a 474 baseline; `ENV4` re-proven; independent reviewer gate clean). Live stress lane scaffolded + gating
+offline-proven; **live execution pending Asaf coordination + the recording-notice gate.** · **Reviewer gate:** ✅.
 
 ---
 
