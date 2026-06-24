@@ -51,15 +51,18 @@ class TestVoice1AssistantConfig:
         assert assistant["stopSpeakingPlan"]["numWords"] >= 2
         assert "startSpeakingPlan" in assistant
 
-    def test_tools_carry_server_url_when_public_url_set(self, monkeypatch):
-        """Each tool must carry server.url so Vapi knows WHERE to POST the invocation.
-        Without it every tool returns 'No result returned' (live booking fix 2026-06-24).
+    def test_tools_carry_server_url_and_secret_when_configured(self, monkeypatch):
+        """Each tool must carry server.url (WHERE to POST → else 'No result returned')
+        AND server.secret (the x-vapi-secret Vapi echoes → else our webhook 401s and
+        the tool result is 'unauthorized'). Both are the live booking fixes (2026-06-24).
         """
         monkeypatch.setenv("PUBLIC_WEBHOOK_URL", "https://example.ngrok-free.dev")
+        monkeypatch.setenv("VAPI_WEBHOOK_SECRET", "unit-test-secret")
         a = VapiVoiceProvider().configure_assistant()
         tools = a["model"]["tools"]
         assert tools and all(
             t.get("server", {}).get("url") == "https://example.ngrok-free.dev/webhook/tool"
+            and t.get("server", {}).get("secret") == "unit-test-secret"
             for t in tools
         )
 

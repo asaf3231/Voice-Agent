@@ -127,7 +127,10 @@ class VoiceProvider(Protocol):
 # Tool/function JSON-schema definitions (names == AGENT_TOOLS — VOICE1)
 # ===========================================================================
 
-def _tool_schemas(server_url: str | None = None) -> list[dict[str, Any]]:
+def _tool_schemas(
+    server_url: str | None = None,
+    server_secret: str | None = None,
+) -> list[dict[str, Any]]:
     """Return the 5 tool/function definitions for the assistant payload.
 
     Each function's `name` is exactly its AGENT_TOOLS entry (the dispatch key the
@@ -137,8 +140,10 @@ def _tool_schemas(server_url: str | None = None) -> list[dict[str, Any]]:
     fails loudly, not silently at call time.
 
     If *server_url* is given, each tool carries `server.url` = that URL so Vapi
-    knows WHERE to POST the tool invocation. Without it, Vapi has no address and
-    every tool returns "No result returned" (the live booking failure 2026-06-24).
+    knows WHERE to POST the tool invocation (without it → "No result returned").
+    If *server_secret* is given too, it is set as `server.secret`, which Vapi sends
+    back as the `x-vapi-secret` header so our webhook auth passes (without it →
+    the webhook 401s and the tool result is "unauthorized" — live fix 2026-06-24).
     """
     schemas: list[dict[str, Any]] = [
         {
@@ -248,10 +253,14 @@ def _tool_schemas(server_url: str | None = None) -> list[dict[str, Any]]:
         },
     ]
 
-    # Tell Vapi WHERE to send each tool invocation (else "No result returned").
+    # Tell Vapi WHERE to send each tool invocation (else "No result returned"),
+    # and WITH WHICH SECRET so our webhook auth passes (else "unauthorized").
     if server_url:
         for s in schemas:
-            s["server"] = {"url": server_url}
+            server: dict[str, Any] = {"url": server_url}
+            if server_secret:
+                server["secret"] = server_secret
+            s["server"] = server
 
     # Guard: the function names MUST equal AGENT_TOOLS exactly (the dispatch keys).
     names = [s["function"]["name"] for s in schemas]
@@ -300,6 +309,9 @@ class VapiVoiceProvider:
         # Without it Vapi has no address → "No result returned" on every tool.
         public_base = (get_setting("PUBLIC_WEBHOOK_URL") or "").rstrip("/")
         tool_server_url = f"{public_base}/webhook/tool" if public_base else None
+        # The shared secret Vapi must echo as x-vapi-secret so our webhook auth
+        # passes; read at build time, sent only in the runtime payload to Vapi.
+        tool_server_secret = get_setting("VAPI_WEBHOOK_SECRET")
 
         return {
             # The OpenAI Realtime model is configured INSIDE the platform; we name
@@ -310,7 +322,7 @@ class VapiVoiceProvider:
                 "messages": [
                     {"role": "system", "content": system_prompt},
                 ],
-                "tools": _tool_schemas(tool_server_url),
+                "tools": _tool_schemas(tool_server_url, tool_server_secret),
             },
             # CHOKEPOINT (VOICE1/CON2/Finding 4): the disclosure is the platform's
             # static first message — spoken VERBATIM by the platform, byte-exact,
