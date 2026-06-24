@@ -40,6 +40,17 @@ def _post_signed(client: TestClient, path: str, payload: dict, *, secret: str):
     )
 
 
+def _result_payload(resp) -> dict:
+    """Unwrap Vapi's tool-result envelope to the inner structured payload.
+
+    The server answers {"results": [{"toolCallId": ..., "result": "<json>"}]};
+    this returns the parsed inner dict (what dispatch produced).
+    """
+    body = resp.json()
+    inner = body["results"][0]["result"]
+    return json.loads(inner) if isinstance(inner, str) else inner
+
+
 # ---------------------------------------------------------------------------
 # verify_secret unit (the isolated, swappable webhook-auth fn)
 # ---------------------------------------------------------------------------
@@ -97,7 +108,7 @@ class TestVoice2WebhookSecret:
             secret=WEBHOOK_SECRET,
         )
         assert resp.status_code == 200
-        assert resp.json()["ok"] is True
+        assert _result_payload(resp)["ok"] is True
 
     def test_wrong_secret_value_401(self, client):
         """A request carrying the WRONG secret → 401."""
@@ -129,6 +140,27 @@ class TestVoice2WebhookSecret:
 class TestVoice3ToolDispatch:
     """VOICE3: a verified tool webhook routes to the right tool; unknown → structured error."""
 
+    def test_response_uses_vapi_results_envelope_and_echoes_toolcallid(self, client):
+        """VOICE3 (Vapi contract): the response is {"results":[{"toolCallId","result"}]}
+        and the toolCallId from the request is echoed back — without this, Vapi reports
+        'No result returned' and the agent can never book (live reconciliation 2026-06-24).
+        """
+        payload = {
+            "message": {
+                "toolCalls": [
+                    {"id": "call_abc123",
+                     "function": {"name": "end_call", "arguments": {"reason": "x"}}}
+                ]
+            }
+        }
+        resp = _post_signed(client, "/webhook/tool", payload, secret=WEBHOOK_SECRET)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "results" in body and isinstance(body["results"], list)
+        assert body["results"][0]["toolCallId"] == "call_abc123"
+        # result is a string the model consumes
+        assert isinstance(body["results"][0]["result"], str)
+
     def test_end_call_dispatches(self, client):
         """end_call routes to app.tools.end_call and returns its structured result."""
         resp = _post_signed(
@@ -137,10 +169,10 @@ class TestVoice3ToolDispatch:
             secret=WEBHOOK_SECRET,
         )
         assert resp.status_code == 200
-        body = resp.json()
-        assert body["ok"] is True
-        assert body["data"]["ended"] is True
-        assert body["data"]["reason"] == "completed"
+        data = _result_payload(resp)
+        assert data["ok"] is True
+        assert data["data"]["ended"] is True
+        assert data["data"]["reason"] == "completed"
 
     def test_detect_voicemail_dispatches_with_args(self, client):
         """detect_voicemail routes with validated args and classifies the transcript."""
@@ -151,9 +183,9 @@ class TestVoice3ToolDispatch:
             secret=WEBHOOK_SECRET,
         )
         assert resp.status_code == 200
-        body = resp.json()
-        assert body["ok"] is True
-        assert body["data"]["is_voicemail"] is True
+        data = _result_payload(resp)
+        assert data["ok"] is True
+        assert data["data"]["is_voicemail"] is True
 
     def test_log_disposition_masks_phone(self, client):
         """log_disposition via the webhook masks the phone number (LEAK2 cross-check)."""
@@ -164,11 +196,11 @@ class TestVoice3ToolDispatch:
                            "phone_e164": "+15551234567"}},
             secret=WEBHOOK_SECRET,
         )
-        body = resp.json()
-        assert body["ok"] is True
-        # The full number must NOT appear; only the masked form.
-        assert "+15551234567" not in json.dumps(body)
-        assert body["data"]["phone_masked"].endswith("67")
+        data = _result_payload(resp)
+        assert data["ok"] is True
+        # The full number must NOT appear ANYWHERE in the response; only the masked form.
+        assert "+15551234567" not in resp.text
+        assert data["data"]["phone_masked"].endswith("67")
 
     def test_unknown_tool_structured_error_no_crash(self, client):
         """An unknown tool → a structured error, HTTP 200, no crash/traceback."""
@@ -177,9 +209,9 @@ class TestVoice3ToolDispatch:
             secret=WEBHOOK_SECRET,
         )
         assert resp.status_code == 200
-        body = resp.json()
-        assert body["ok"] is False
-        assert body["error"] == "unknown_tool"
+        data = _result_payload(resp)
+        assert data["ok"] is False
+        assert data["error"] == "unknown_tool"
 
     def test_bad_args_for_known_tool_structured_error(self, client):
         """Bad/extra args for a known tool → structured invalid_input, not a 500."""
@@ -189,32 +221,34 @@ class TestVoice3ToolDispatch:
             secret=WEBHOOK_SECRET,
         )
         assert resp.status_code == 200
-        body = resp.json()
-        assert body["ok"] is False
-        assert body["error"] == "invalid_input"
+        data = _result_payload(resp)
+        assert data["ok"] is False
+        assert data["error"] == "invalid_input"
 
     def test_vapi_nested_tool_call_form(self, client):
         """The Vapi message.toolCalls[].function form routes the same as the flat form."""
         payload = {
             "message": {
                 "toolCalls": [
-                    {"function": {"name": "end_call",
+                    {"id": "call_nested",
+                     "function": {"name": "end_call",
                                   "arguments": {"reason": "vapi-nested"}}}
                 ]
             }
         }
         resp = _post_signed(client, "/webhook/tool", payload, secret=WEBHOOK_SECRET)
         assert resp.status_code == 200
-        body = resp.json()
-        assert body["ok"] is True
-        assert body["data"]["reason"] == "vapi-nested"
+        assert resp.json()["results"][0]["toolCallId"] == "call_nested"
+        data = _result_payload(resp)
+        assert data["ok"] is True
+        assert data["data"]["reason"] == "vapi-nested"
 
     def test_no_tool_call_in_payload_structured(self, client):
         """A verified payload with no tool call → a structured 'no_tool_call', no crash."""
         resp = _post_signed(client, "/webhook/tool", {"message": {}},
                             secret=WEBHOOK_SECRET)
         assert resp.status_code == 200
-        assert resp.json()["error"] == "no_tool_call"
+        assert _result_payload(resp)["error"] == "no_tool_call"
 
 
 # ---------------------------------------------------------------------------
@@ -240,9 +274,9 @@ class TestVoice3BookingOverWebhook:
             secret=WEBHOOK_SECRET,
         )
         assert resp.status_code == 200
-        body = resp.json()
-        assert body["ok"] is True
-        assert body["data"]["count"] > 0
+        data = _result_payload(resp)
+        assert data["ok"] is True
+        assert data["data"]["count"] > 0
 
     def test_book_meeting_over_webhook_books_a_real_event(self, client, monkeypatch):
         import app.tools as tools
@@ -251,11 +285,11 @@ class TestVoice3BookingOverWebhook:
         shared = MockCalendar()  # one calendar for both the lookup and the booking
         monkeypatch.setattr(tools, "_get_calendar", lambda: shared)
 
-        avail = _post_signed(
+        avail = _result_payload(_post_signed(
             client, "/webhook/tool",
             {"name": "check_availability", "arguments": {}},
             secret=WEBHOOK_SECRET,
-        ).json()
+        ))
         iso = avail["data"]["slots"][0]["start_utc"]
 
         resp = _post_signed(
@@ -265,9 +299,9 @@ class TestVoice3BookingOverWebhook:
             secret=WEBHOOK_SECRET,
         )
         assert resp.status_code == 200
-        body = resp.json()
-        assert body["ok"] is True, f"booking failed over the webhook: {body}"
-        assert body["data"]["event_id"]
+        data = _result_payload(resp)
+        assert data["ok"] is True, f"booking failed over the webhook: {data}"
+        assert data["data"]["event_id"]
 
 
 # ---------------------------------------------------------------------------

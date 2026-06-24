@@ -124,38 +124,58 @@ def _unauthorized() -> JSONResponse:
 # Tool-call webhook (VOICE3) — routes to app.tools.dispatch
 # ===========================================================================
 
-def _extract_tool_call(payload: dict[str, Any]) -> tuple[str | None, dict[str, Any]]:
-    """Pull (tool_name, args) from a webhook payload, tolerant of nesting.
+def _extract_tool_call(
+    payload: dict[str, Any],
+) -> tuple[str | None, str | None, dict[str, Any]]:
+    """Pull (tool_call_id, tool_name, args) from a webhook payload, tolerant of nesting.
 
-    Vapi nests the function call under message.toolCalls/functionCall; we accept
-    a flat {name, arguments} too so the contract under test is the dispatch
-    behavior, not one exact provider envelope (the verify fn is the swappable seam).
-    Returns (None, {}) if no tool call is present.
+    Vapi nests the function call under message.toolCalls/functionCall and assigns
+    each call an `id` we MUST echo back in the result envelope; we accept a flat
+    {name, arguments} too (tests / a simple provider). Returns (None, None, {}) if
+    no tool call is present.
     """
     # Flat form (tests / a simple provider): {"name": ..., "arguments": {...}}.
     if "name" in payload:
         args = payload.get("arguments") or payload.get("args") or {}
-        return payload["name"], args if isinstance(args, dict) else {}
+        return payload.get("toolCallId"), payload["name"], args if isinstance(args, dict) else {}
 
     message = payload.get("message")
     if isinstance(message, dict):
-        # Vapi tool-calls form: message.toolCalls[0].function.{name,arguments}.
+        # Vapi tool-calls form: message.toolCalls[0].{id, function.{name,arguments}}.
         tool_calls = message.get("toolCalls") or message.get("toolCallList") or []
         if isinstance(tool_calls, list) and tool_calls:
-            fn = (tool_calls[0] or {}).get("function") or {}
+            call0 = tool_calls[0] or {}
+            fn = call0.get("function") or {}
             args = fn.get("arguments") or {}
             if isinstance(args, str):
                 try:
                     args = json.loads(args)
                 except json.JSONDecodeError:
                     args = {}
-            return fn.get("name"), args if isinstance(args, dict) else {}
+            return call0.get("id"), fn.get("name"), args if isinstance(args, dict) else {}
         # Legacy single functionCall form.
         fc = message.get("functionCall")
         if isinstance(fc, dict):
             args = fc.get("parameters") or fc.get("arguments") or {}
-            return fc.get("name"), args if isinstance(args, dict) else {}
-    return None, {}
+            return (message.get("toolCallId") or fc.get("id"), fc.get("name"),
+                    args if isinstance(args, dict) else {})
+    return None, None, {}
+
+
+def _tool_results(tool_call_id: str | None, payload: dict[str, Any]) -> JSONResponse:
+    """Wrap a tool's structured payload in **Vapi's tool-result envelope** (VOICE3).
+
+    Vapi requires a custom-tool webhook to answer with
+    `{"results": [{"toolCallId": <id>, "result": <string>}]}` — the model receives
+    `result` as the tool's output. We JSON-encode our structured payload so the
+    model can use it (e.g. read the free slots from check_availability, then call
+    book_meeting). Returning the wrong shape makes Vapi report "No result returned"
+    and the agent can never book (reconciled against the live Vapi contract 2026-06-24).
+    """
+    return JSONResponse(
+        status_code=200,
+        content={"results": [{"toolCallId": tool_call_id, "result": json.dumps(payload)}]},
+    )
 
 
 @app.post("/webhook/tool")
@@ -163,28 +183,26 @@ async def tool_webhook(request: Request) -> JSONResponse:
     """Handle a secret-verified tool-call webhook (VOICE2 + VOICE3).
 
     A bad/missing secret → 401 (never processed). A verified call routes to
-    app.tools.dispatch(name, **args); an unknown tool or bad args returns a
-    STRUCTURED error (dispatch never raises across its boundary — §6), never a 500.
+    app.tools.dispatch(name, **args) and the structured result is returned in
+    Vapi's tool-result envelope (`_tool_results`). An unknown tool, bad args, or
+    handler error is still returned as a structured result string (dispatch never
+    raises across its boundary — §6), never a 500.
     """
     ok, _raw, payload = await _verified_body(request)
     if not ok:
         return _unauthorized()
 
+    tool_call_id: str | None = None
     try:
-        name, args = _extract_tool_call(payload)
+        tool_call_id, name, args = _extract_tool_call(payload)
         if not name:
-            return JSONResponse(
-                status_code=200,
-                content={"ok": False, "error": "no_tool_call",
-                         "message": "webhook carried no tool call"},
-            )
+            return _tool_results(tool_call_id, {"ok": False, "error": "no_tool_call",
+                                                "message": "webhook carried no tool call"})
         result = dispatch(name, **args)
-        return JSONResponse(status_code=200, content=result.to_dict())
+        return _tool_results(tool_call_id, result.to_dict())
     except Exception as exc:  # noqa: BLE001 — never leak a 500 traceback (§6)
-        return JSONResponse(
-            status_code=200,
-            content={"ok": False, "error": "handler_error", "message": str(exc)},
-        )
+        return _tool_results(tool_call_id, {"ok": False, "error": "handler_error",
+                                            "message": str(exc)})
 
 
 # ===========================================================================

@@ -607,3 +607,24 @@ allowlist isn't found at the repo-root default path (place `consent_allowlist.js
 **Why GA:** newest + most capable, best latency/quality for a live voice demo; per-minute cost is modest, a 2–3 min test call stays well under the $1/call cap. We stay on a **realtime (speech-to-speech)** id — the standard chat models in Vapi's list (gpt-5.x / gpt-4o / o3 …) are not speech-to-speech and would break the low-latency turn-taking that OQ-VOICE-1 chose.
 **Applied (graded constant — Asaf-authorized):** `app/config.py` + `CLAUDE.md` §9 + this NOTES table + the OQ-VOICE-1 row; tests updated (`test_env.py` realtime-constant, `test_voice.py` VOICE1 model assertion). Also **widened `place_call`'s Vapi-error capture** (status line → response body, 2000 chars) so any *further* payload-validation errors surface in full on the next attempt. **No other graded contract touched** (disclosure-first byte-exact, recording-gated CON3, the 5 tools, the interface signatures all unchanged).
 **Watch:** Vapi validates strictly and the 400 body was truncated — there may be 1–2 more payload tweaks after the model (e.g. `recordingEnabled`/`metadata` placement). The widened capture will reveal them; any such fix stays within the VOICE1 graded contract + independent review before retry.
+
+### 2026-06-24 — First live call diagnosed: conversation worked, booking failed (Vapi tool-result envelope) — fixed  *(PM, from the live Vapi record)*
+**Call `019ef86c-…5cc5`** (read-only from Vapi API): ended `customer-ended-call`, ~2 min, **cost $0.4488** (≤ $1 cap), 23 messages.
+**What worked:** disclosure spoken FIRST, discovery → value-prop pitch → on "set up the meeting" Aria called
+`check_availability`; on tool failure it gracefully degraded to the failsafe-style close + ended safely (governance held).
+**Root-cause bug (booking failed — LIVE1 ✗):** every tool call returned Vapi's *"No result returned"* error — our
+`/webhook/tool` answered `{"ok":…,"data":…}` but **Vapi requires `{"results":[{"toolCallId":<id>,"result":<string>}]}`**.
+So Vapi never saw the slots → no booking. (My earlier smoke test only checked HTTP 200 + dispatch, not Vapi's result
+envelope — same "only-verifiable-live" class as the `x-vapi-secret` + model-id reconciliations.) **Fix (VOICE3):**
+`_extract_tool_call` now also captures the `toolCallId`; added `_tool_results(...)` returning Vapi's envelope (result =
+JSON-encoded tool payload); `tool_webhook` wraps every response (success / no_tool_call / error). Auth + dispatch +
+masking unchanged. Tests rewritten to the envelope (+ a toolCallId-echo test). Suite **420 green**; local smoke returns
+the exact `{"results":[{"toolCallId":…,"result":…}]}` shape. **Verification of LIVE1 is the live re-test** (the real Vapi
+contract), then an independent review of the combined webhook changes.
+**Second issue (demo quality, not a code bug):** the disclosure TTS pronounced **"Alta" as "Ulta"** — the `firstMessage`
+text is byte-exact/correct; this is a **voice pronunciation** matter (fix in Vapi voice settings / a phonetic hint, or a
+`replacements` rule). Flag for the demo; doesn't affect LIVE2's byte-exact text contract.
+**Cost/ledger nuance:** the persistent ledger under-recorded ($0) because `place_demo_call` queried cost the instant Vapi
+*accepted* the call (cost is finalized only after it ends). Real cost is $0.4488 (from the API/receipt). **Follow-up fix
+needed:** capture cost post-call (via `capture_receipts.py`) and reconcile it into the ledger, or don't trust an immediate
+`cost=0`.
