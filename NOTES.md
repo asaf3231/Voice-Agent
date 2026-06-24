@@ -648,3 +648,19 @@ calendar clean. Idempotency cache + 409→slot_taken preserved; non-2xx now retu
 swallow). Offline suite **420 green** (MockCalendar default unchanged; the Stage-8 idempotency test's fake updated to the
 v2 `{"data":{...}}` shape). **All booking blockers resolved** (Vapi result-envelope + Cal.com v2). Remaining: independent
 review of the live-path changes, the cost/ledger post-call reconciliation, and a final end-to-end live phone demo.
+
+### 2026-06-24 — 2nd live call deep-read: oversized slot payload (the real live blocker) + conversation-quality fixes  *(PM)*
+**Call `019ef883` (07:24Z, $0.5667) ran AFTER both fixes (envelope 07:09Z, v2 07:21Z) yet still failed to book** — so a
+THIRD, live-only cause the offline mock hid. **Root cause:** `check_availability` against live Cal.com returned **239
+slots → a 49,042-char tool result**; the voice platform can't take a result that size → "No result returned" /
+"unexpected error". The MockCalendar returns a handful, so offline never showed it. **Fix:** `check_availability` now
+caps to a small evenly-spread set (`MAX_SLOTS_OFFERED = 5`, a local tools.py knob — not §9). Verified live: payload
+**49KB → ~1KB**, 5 slots spread across days; suite 420 green.
+**Persona tightening (from the transcript):** pinned the meeting to a single `BOOKING_SLOT_MINUTES`-minute length
+(Aria had improvised "20 min" then "30 min"); added "while a tool runs say one short line then wait" + pacing guidance
+(Aria's pitch was choppy). `persona.py` prompt only — no graded literal/contract change.
+**What the call confirmed worked:** disclosure first; discovery + value-prop pitch; **compliance held** (when pushed on
+price, Aria did NOT invent a number — deferred to the team, Policy 4 ✓); graceful degradation + safe close; cost ≤ cap.
+**Still config (Asaf's side, voice):** (1) "Alta" pronounced "Ulta" → Vapi voice pronunciation/replacement rule; (2)
+Aria cut off mid-sentence by short backchannels → Vapi interruption-sensitivity (`startSpeakingPlan`/`stopSpeakingPlan`).
+**Config to align:** the Cal.com event type is **15 min**; set it to 30 to match `BOOKING_SLOT_MINUTES`, or we change §9.

@@ -52,6 +52,14 @@ VALID_DISPOSITIONS = frozenset(
     {"booked", "declined", "no_answer", "voicemail", "error"}
 )
 
+# Max free slots check_availability returns to the agent. A LIVE calendar can
+# return hundreds of 15-min slots across the lookahead window; handing all of
+# them to the voice model (a) overflowed the voice platform's tool-result
+# (caused "No result returned" on the live call 2026-06-24) and (b) is poor UX —
+# the agent should offer a few natural choices. NOT a §9 governance constant; a
+# local tool-output tuning knob (mirrors orchestrate.PROJECTED_COST_PER_CALL).
+MAX_SLOTS_OFFERED = 5
+
 # Voicemail-greeting cues — case-insensitive substring signals (TOOL4). Generic
 # carrier/greeting phrases only; NOT lead/business data (LEAK3-safe).
 _VOICEMAIL_CUES = (
@@ -150,13 +158,17 @@ def check_availability(
     lead_timezone: str | None = None,
     lookahead_days: int = BOOKING_LOOKAHEAD_DAYS,
     slot_minutes: int = BOOKING_SLOT_MINUTES,
+    max_slots: int = MAX_SLOTS_OFFERED,
 ) -> ToolResult:
-    """Return free slots within the lookahead window, tz-resolved to the lead.
+    """Return up to *max_slots* free slots within the lookahead window, tz-resolved.
 
     Deterministic under the mock (the `now` clock is injected). Resolves the
     lead's timezone against SALES_CALENDAR_TZ so each slot is voiced in the
     lead's local time while booked at the authoritative calendar time (TOOL1).
-    Any backend failure surfaces as a structured error, never a crash (§6).
+    The result is CAPPED to a small spread of options (live calendars return
+    hundreds of slots, which overflows the voice platform's tool-result and makes
+    a poor "pick a time" UX). Any backend failure surfaces as a structured error,
+    never a crash (§6).
     """
     try:
         lead_zone = _resolve_zone(lead_timezone)
@@ -165,6 +177,11 @@ def check_availability(
             lookahead_days=lookahead_days,
             slot_minutes=slot_minutes,
         )
+        # Cap to a small, evenly-spread set of options (soonest first within each
+        # pick) so the tool result stays small and the agent offers a few choices.
+        if max_slots > 0 and len(slots) > max_slots:
+            stride = len(slots) // max_slots
+            slots = slots[::stride][:max_slots]
         payload = [_slot_to_payload(s, lead_zone) for s in slots]
         return ToolResult(ok=True, data={"slots": payload, "count": len(payload)})
     except Exception as exc:  # noqa: BLE001 — surface as data (§6)
