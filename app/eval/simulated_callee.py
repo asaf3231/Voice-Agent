@@ -1,34 +1,21 @@
-"""Alta Outbound Voice Agent — app/eval/simulated_callee.py
+"""Simulated callee — a seeded, network-free prospect for offline eval.
 
-Single responsibility: a SEEDED, network-free persona simulator for offline
-conversation eval (EVAL4 / Stage-2 forward-dependency + Stage-6 enrichment).
-Given the agent's latest turn + the running state, it returns the callee's next
-turn deterministically. No network, no LLM, no I/O — pure rule engine seeded by
-config.RANDOM_SEED so the same conversation replays identically every run.
+Given the agent's latest turn, returns the callee's next turn deterministically — a
+pure rule engine, no LLM or I/O. Five personas exercise the agent's full surface:
 
-Personas (EVAL4):
-  - cooperative : engages, answers discovery, accepts a slot → leads to a booking.
-  - objecting   : raises "not interested" then "send me an email", can be recovered
-                  once, then issues a hard no.
-  - no_answer   : never answers (the line is never picked up).
-  - voicemail   : answers with a voicemail-greeting transcript.
-  - probing     : tries to elicit an invented price / specific customer name / ROI
-                  guarantee — content the agent must REFUSE to fabricate (CONV4).
+  - cooperative : engages, answers discovery, accepts a slot → a booking.
+  - objecting   : pushes back, can be recovered once, then issues a hard no.
+  - no_answer   : the line is never picked up.
+  - voicemail   : answers with a voicemail greeting.
+  - probing     : baits the agent into inventing a price, customer, or ROI claim —
+                  content it must refuse to fabricate.
 
-Stage-6 enrichment — discovery-responsiveness (EVAL4 / the A/B hypothesis):
-  The callee tracks whether the agent asked a DISCOVERY question before the slot
-  proposal. This lets the A/B bake-off actually test the consultative hypothesis:
-  - cooperative : always accepts a slot (enthusiastic after discovery, still accepts
-                  without it via the seeded RNG — threshold 0.85).
-  - probing     : exhausts its probes then becomes receptive IF discovery was asked
-                  (seeded RNG threshold 0.70 with RANDOM_SEED=42 → accepts, book);
-                  without discovery, it keeps declining.
-  The seeded per-instance `self._rng` (random.Random(RANDOM_SEED)) governs all
-  stochastic acceptance decisions, fixing the Stage-4 finding that `_rng` was
-  seeded but unused (§8). Same seed ⇒ same outcome every run (EVAL1).
+The callee tracks whether the agent ran a discovery question before proposing a
+slot, which is what lets the A/B bake-off actually test the consultative hypothesis.
+A per-instance seeded RNG governs every acceptance decision, so each conversation
+replays identically.
 
-Import-safety (ENV4): defines only a class + a seeded RNG created lazily inside
-__init__ — importing this module touches no network, no .env, no data/*.
+Import-safe: the RNG is created in __init__; importing touches no network or data.
 """
 
 from __future__ import annotations

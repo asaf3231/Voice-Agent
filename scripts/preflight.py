@@ -1,17 +1,11 @@
-"""Alta Outbound Voice Agent — scripts/preflight.py
+"""Pre-live readiness check (`make preflight`).
 
-Pre-live readiness check. Run BEFORE any live call: `make preflight`.
+Verifies that every setting the live path needs is present and that the consent
+allowlist loads with at least one number — without ever printing a secret value (it
+shows each variable name with a PRESENT/MISSING marker only). Exit code 0 means ready
+for a live test; 1 means something is missing or invalid.
 
-Confirms that every setting the live path requires is PRESENT (non-empty) and
-that the consent allowlist loads with at least one number — WITHOUT printing any
-secret value. Output is the variable NAME + a PRESENT/MISSING marker only; no key,
-token, or phone number is ever echoed (CLAUDE.md §5 anti-leakage / SEC1/LEAK1/LEAK2).
-The budget line shows spend totals only (not a secret).
-
-Exit code: 0 = ready for a live test; 1 = something is missing/invalid.
-
-Import-safety (ENV4): all work is inside main(), guarded by `if __name__ ==
-"__main__"`. Importing this module reads no .env, builds no client, places no call.
+Import-safe: all work is inside main(); importing reads no .env and places no call.
 """
 
 from __future__ import annotations

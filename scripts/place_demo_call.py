@@ -1,21 +1,14 @@
-"""Alta Outbound Voice Agent — scripts/place_demo_call.py
+"""Gated single-number demo-call launcher (`make call TO=<e164>`).
 
-The GATED single-number demo-call launcher (`make call TO=<e164>`).
+Places one outbound call, but only after both governance gates pass: the number must
+be on the consent allowlist and the budget guard must approve the projected cost. If
+either fails, no call is placed. After the call it polls for the final cost and
+records it — falling back to a conservative estimate if the cost isn't final yet, so
+the budget total is never under-counted.
 
-Usage:
-  python scripts/place_demo_call.py <e164_number>
-  # or via Makefile:
-  make call TO=+15551234567
+Usage: python scripts/place_demo_call.py <e164_number>   (or `make call TO=...`).
 
-Governance (graded — same chokepoints as orchestrate.py):
-  - consent_allows() MUST pass before place_call (CON1/SEC3).
-  - budget_permits()  MUST pass before place_call (CALL4/SEC3).
-  - The call is NEVER placed if either gate fails.
-  This script is spy-proven to route through both gates (SEC3/CON1 second entry
-  point — Red-Team 2026-06-23, Finding 8).
-
-Import-safety (ENV4): no side effects at module level. All work is inside main(),
-guarded by `if __name__ == "__main__"`.
+Import-safe: all work is inside main(); importing reads no .env and places no call.
 """
 
 from __future__ import annotations
@@ -93,10 +86,25 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
+    # -- pre-fetch availability so Aria offers times INSTANTLY (no mid-call hop) --
+    # Pull the slots up front and inject them into the assistant prompt; on any
+    # failure pass None so Aria falls back to fetching live via the tool.
+    from app import tools
+    from app.config import get_lead_context
+
+    _lead_id, lead_tz = get_lead_context()
+    available_slots = None
+    try:
+        avail = tools.dispatch("check_availability", lead_timezone=lead_tz)
+        if avail.ok and avail.data:
+            available_slots = avail.data.get("slots") or None
+    except Exception:  # noqa: BLE001 — degrade gracefully to the live-fetch path
+        available_slots = None
+
     # -- both gates passed: place the call ------------------------------------
     provider = VapiVoiceProvider()
     try:
-        assistant = provider.configure_assistant()
+        assistant = provider.configure_assistant(available_slots=available_slots)
     except Exception as exc:
         print(f"ERROR: Could not build assistant config: {exc}", file=sys.stderr)
         return 1
@@ -127,14 +135,19 @@ def main(argv: list[str] | None = None) -> int:
     recorded_cost = float(PROJECTED_COST_PER_CALL)
     if result.call_id:
         try:
-            cost_result = provider.fetch_call_cost(call_id=result.call_id)
+            # Poll until Vapi finalizes the cost (it reports 0 until the call ENDS —
+            # the cost-0-vs-null bug). On timeout we fall back to the conservative
+            # projected estimate so the ledger can never under-count real spend.
+            print("Waiting for Vapi to finalize the call cost …")
+            cost_result = provider.fetch_call_cost_settled(call_id=result.call_id)
             if cost_result.ok and cost_result.cost_usd is not None:
                 recorded_cost = cost_result.cost_usd
-                print(f"Cost: ${cost_result.cost_usd:.4f}")
+                print(f"Final cost: ${cost_result.cost_usd:.4f}")
             else:
                 print(
-                    f"Cost not yet available: {cost_result.message or cost_result.error}; "
-                    f"recording projected estimate ${recorded_cost:.4f}"
+                    f"Cost not final in time: {cost_result.message or cost_result.error}; "
+                    f"recording projected estimate ${recorded_cost:.4f}. "
+                    f"Run `make receipts CALL_IDS={result.call_id}` later for the exact figure."
                 )
         except Exception as exc:  # noqa: BLE001
             print(f"Warning: cost fetch raised: {exc}; "

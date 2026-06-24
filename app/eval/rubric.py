@@ -1,25 +1,20 @@
-"""Alta Outbound Voice Agent — app/eval/rubric.py
+"""Scoring rubric — five computed signals over a transcript.
 
-Single responsibility: a COMPUTED rubric that scores a transcript on the five
-conversation signals (EVAL3) — never a hardcoded outcome (EVAL2 / LEAK4):
+Scores a transcript on five booleans, each derived from the transcript and the
+value-prop facts (never hardcoded):
 
-  - disclosure_said    : the first AGENT utterance == DISCLOSURE_LINE byte-exact.
-  - pitch_delivered    : a value-prop claim drawn from the value-prop file appears
-                         in an agent turn BEFORE the slot proposal.
-  - objection_handled  : an objection received a scripted recovery before any
-                         hard-no close (or no objection was raised → vacuously ok).
-  - meeting_booked     : a booking is voiced ONLY on a turn flagged booked=True
-                         (i.e. after a successful book), never merely spoken.
-  - compliance_ok      : no invented Alta claim (a price/number/customer name not
-                         present in the value-prop file); FAILSAFE_HANGUP_LINE
-                         byte-exact when used; no booking voiced without a book.
+  - disclosure_said   : the first agent utterance is the disclosure, byte-exact.
+  - pitch_delivered   : a grounded value-prop claim appears before the slot proposal.
+  - objection_handled : every objection got a scripted recovery before any hard-no.
+  - meeting_booked    : a booking is counted only on a turn flagged as booked — never
+                        a merely spoken "you're all set" (no phantom confirmations).
+  - compliance_ok     : no invented price/percentage/multiplier, and the failsafe
+                        close is byte-exact whenever it is used.
 
-Every signal is computed from the transcript + the value-prop facts read at
-runtime. Nothing here asserts an outcome literal (EVAL2/LEAK4).
+Also exposes the behavioral checks used as regression guards (pitch-tailored,
+slot-reoffer-handled).
 
-Import-safety (ENV4): defines functions + a frozen result dataclass only. The
-value-prop file is read LAZILY (inside score_transcript / the keyword extractor)
-via config.value_prop_path(), never at import. No network, no client.
+Import-safe: the value-prop file is read lazily at scoring time, never at import.
 """
 
 from __future__ import annotations
@@ -36,7 +31,7 @@ from app.config import (
 from app.eval import Speaker, Stage, Turn
 
 # ---------------------------------------------------------------------------
-# Value-prop fact extraction (read at runtime — LEAK3; never hardcoded)
+# Value-prop fact extraction (read at runtime; never hardcoded)
 # ---------------------------------------------------------------------------
 
 # Tokens that, if the agent utters them but they are NOT grounded in the
@@ -66,7 +61,7 @@ def _read_value_prop_text(path: Path | str | None = None) -> str:
     if not resolved.exists():
         raise FileNotFoundError(
             f"Value-prop file not found: {resolved}. "
-            "The rubric needs the value-prop file to ground claims (LEAK3)."
+            "The rubric needs the value-prop file to ground claims."
         )
     return resolved.read_text(encoding="utf-8")
 
@@ -74,7 +69,7 @@ def _read_value_prop_text(path: Path | str | None = None) -> str:
 def extract_value_prop_claims(path: Path | str | None = None) -> frozenset[str]:
     """Return the set of distinctive lowercase keyword-claims grounded in the file.
 
-    Computed from the value-prop file at runtime (LEAK3): we take meaningful words
+    Computed from the value-prop file at runtime: we take meaningful words
     (≥4 chars, not stop-words) the agent is allowed to assert. pitch_delivered is
     True when an agent turn echoes any of these grounded keywords.
     """
@@ -255,7 +250,7 @@ def _compute_compliance_ok(
     transcript: list[Turn], claims: frozenset[str]
 ) -> bool:
     """True iff no invented claim, failsafe is byte-exact when used, and no booking
-    is voiced without a booked=True turn (no phantom confirmation — Policy 5/6)."""
+    is voiced without a booked=True turn (no phantom confirmation)."""
     if _find_invented_claim(transcript):
         return False
 
@@ -280,7 +275,7 @@ def _is_failsafe_drift(text: str) -> bool:
     """True if *text* looks like a paraphrase of FAILSAFE_HANGUP_LINE but isn't exact.
 
     Catches a drifted close (e.g. a curly apostrophe or reworded goodbye) so the
-    byte-exact contract (CONV6) is enforced, not hoped for.
+    byte-exact contract is enforced, not hoped for.
     """
     if text == FAILSAFE_HANGUP_LINE:
         return False
@@ -348,7 +343,7 @@ def pitch_tailored(
     if not answer:
         return True
 
-    # Lazy imports (avoid an import cycle + keep rubric import-safe — ENV4).
+    # Lazy imports (avoid an import cycle + keep rubric import-safe).
     from app.tools import qualify
     from app.persona import load_value_prop
 
@@ -395,7 +390,7 @@ _MEETING_REJECTION_MARKERS = (
 
 
 def slot_reoffer_handled(transcript: list[Turn]) -> bool:
-    """True iff a TIME-rejection was met with an agent RE-OFFER, not a collapse (Bug 1).
+    """True iff a TIME-rejection was met with an agent RE-OFFER, not a collapse.
 
     A booking agent must treat "that time doesn't work, got anything else?" as a
     request for an alternative slot — NOT as a terminal no. This signal is True iff,
@@ -432,12 +427,12 @@ def slot_reoffer_handled(transcript: list[Turn]) -> bool:
 def score_transcript(
     transcript: list[Turn], *, value_prop_path: Path | str | None = None
 ) -> RubricResult:
-    """Score *transcript* on the five signals — fully COMPUTED (EVAL2/LEAK4).
+    """Score *transcript* on the five signals — fully computed.
 
     Args:
         transcript: the ordered list of Turns (agent + callee).
         value_prop_path: override path for the value-prop file (tests); default
-            resolves the repo file at runtime (LEAK3 — never hardcoded).
+            resolves the repo file at runtime (never hardcoded).
 
     Returns:
         A RubricResult; each signal is derived from the transcript, never asserted.

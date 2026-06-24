@@ -1,25 +1,14 @@
-"""Alta Outbound Voice Agent — app/eval/harness.py
+"""Evaluation harness — the deterministic, offline scoring core.
 
-Single responsibility: the DETERMINISTIC, OFFLINE evaluation harness — the
-reproducible core that produces the numbers shown in the video (EVAL1/EVAL5).
+Runs every persona (cooperative, objecting, no-answer, voicemail, probing) against
+both dialog variants, scores each resulting transcript with the computed rubric, and
+emits a reproducible summary (book rate, disclosure compliance, objection handling,
+compliance, average turns). It can also load and score the labeled synthetic
+transcript fixtures used as negative regression guards. Every stochastic part is
+seeded, so the same inputs produce identical numbers on every run — these are the
+figures shown in the demo video.
 
-It runs the full persona matrix (cooperative / objecting / no_answer / voicemail /
-probing) × both variants (A, B) through the dialog policy via `run_conversation`,
-scores each resulting transcript with the computed rubric (EVAL2/EVAL3), and emits
-a reproducible aggregate summary (book-rate, disclosure-compliance, objection-
-handled-rate, compliance-ok-rate, avg-agent-turns) over the set.
-
-Optionally, it also loads and scores labeled SIMULATED transcript fixtures from
-`fixtures/transcripts/` (synthetic only, no real PII — LEAK2/EVAL6). Fixtures are
-used for the negative regression guards (disclosure-first and phantom-booking).
-
-Seeding: every stochastic offline component (the SimulatedCallee) is seeded via
-`config.RANDOM_SEED`; no wall-clock, no network, no global-random dependence.
-Same input ⇒ identical numbers across runs (EVAL1).
-
-Import-safety (ENV4): this module defines only constants, functions, and dataclasses.
-The value-prop file is read LAZILY at runtime inside `run_conversation`/`score_
-transcript`. No network, no client, no .env read at import.
+Import-safe: the value-prop file is read lazily at run time; no network or .env.
 """
 
 from __future__ import annotations

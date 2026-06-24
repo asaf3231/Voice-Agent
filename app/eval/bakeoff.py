@@ -1,18 +1,12 @@
-"""Alta Outbound Voice Agent — app/eval/bakeoff.py
+"""A/B bake-off — compares the two dialog variants on the persona matrix.
 
-Single responsibility: the Stage-2 A/B bake-off harness. Runs BOTH persona
-variants (A, B) across the fixed persona matrix, scores every resulting
-transcript through the COMPUTED rubric (app/eval/rubric.py), and returns a
-deterministic table of aggregate metrics.
+Runs both variants across the fixed persona set, scores each transcript through the
+computed rubric, and returns a deterministic table of aggregate metrics. It declares
+no winner by design: the figures are computed from transcripts (never hardcoded) and
+the decision is made on the numbers.
 
-It declares NO winner (brief: "Executer builds, PM scores"). The PM re-runs this
-and decides on the numbers. Every figure is computed from a transcript via the
-rubric — nothing is hardcoded (EVAL2 / LEAK4).
-
-Import-safety (ENV4): defines functions/dataclasses only; the value-prop file is
-read at run time inside the conversation runner, never at import. No network.
-
-Time-boxed (Red-Team Finding 5): 2 variants × a SMALL FIXED persona set.
+Import-safe: defines functions/dataclasses only; the value-prop file is read at run
+time, never at import.
 """
 
 from __future__ import annotations

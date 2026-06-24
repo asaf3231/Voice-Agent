@@ -1,25 +1,11 @@
-"""Alta Outbound Voice Agent — app/budget.py
+"""Budget governance — the spend ledger and the pre-call cost guard.
 
-Single responsibility: spend ledger + per-call and cumulative budget guards.
+Tracks cumulative spend and enforces the hard ceilings before any call is placed: a
+per-call cap and a total cap, with tighter sub-caps for live calls. Spend is
+persisted to a local state file so the total cap holds across separate runs (and
+across the two live entry points), not just within a single process.
 
-Enforces CLAUDE.md §5 Policy 1:
-  - budget_permits(projected) → False when projected > MAX_COST_PER_CALL_USD
-    OR cumulative + projected > HARD_BUDGET_USD
-  - Live calls also respect LIVE_CALL_BUDGET_USD and MAX_LIVE_CALLS.
-  - The guard MUST run before place_call (enforced in orchestrate.py + scripts/).
-
-Persistent ledger (Stage 8 — closes the security-HIGH from the Stage-7 gate):
-  - BudgetLedger(persist_path=...) persists cumulative spend across process
-    invocations so the HARD_BUDGET_USD=$50 cap is real, not illusory.
-  - Default (persist_path=None) is in-memory only — existing isolated tests
-    stay green and unaffected.
-  - get_ledger() uses a default gitignored state file under receipts/ so the
-    two live entry points (orchestrate.py singleton, scripts/place_demo_call.py)
-    share one cumulative total across separate invocations.
-
-Import-safety (ENV4): no I/O, no network, no .env read at import.
-All state lives in BudgetLedger instances; the module-level singleton is
-never initialised at import — call get_ledger() to access it.
+Import-safe: no I/O at import — the ledger singleton is created on first use.
 """
 
 from __future__ import annotations
@@ -70,14 +56,12 @@ class BudgetLedger:
     Thread-safety: not thread-safe by design (single-threaded campaign runner).
     For concurrent use, wrap in a lock at the call site.
 
-    Persistence (opt-in — Stage 8 security-HIGH fix):
-      Set persist_path to a writable file path to persist cumulative spend
-      across process invocations. The file holds only numeric spend state
-      (no secrets, no phone numbers). A missing or corrupt file is treated as
-      a fresh start (logged warning, never crash — §6).
-
-      Default (persist_path=None) is fully in-memory — existing isolated tests
-      are unaffected.
+    Persistence (opt-in):
+      Set persist_path to a writable file path to persist cumulative spend across
+      process invocations — this is what makes the total cap real rather than
+      per-process. The file holds only numeric spend state (no secrets, no phone
+      numbers). A missing or corrupt file is treated as a fresh start (logged, never
+      crashes). The default (persist_path=None) is fully in-memory.
     """
 
     _cumulative: Decimal = field(default_factory=lambda: Decimal("0"))
@@ -94,7 +78,7 @@ class BudgetLedger:
         default_factory=lambda: _to_decimal(LIVE_CALL_BUDGET_USD)
     )
     max_live_calls: int = field(default=MAX_LIVE_CALLS)
-    # Post-hoc over-cap alarm tolerance — sourced from the §9 constant, not inlined (F1).
+    # Post-hoc over-cap alarm tolerance — sourced from the shared constant, not inlined.
     alarm_margin: Decimal = field(
         default_factory=lambda: _to_decimal(BUDGET_ALARM_ROUNDING_MARGIN)
     )
@@ -103,7 +87,7 @@ class BudgetLedger:
     persist_path: Path | None = field(default=None)
 
     def __post_init__(self) -> None:
-        """Load persisted state if persist_path is set (§6: missing/corrupt → start at 0)."""
+        """Load persisted state if persist_path is set (missing/corrupt → start at 0)."""
         if self.persist_path is not None:
             self._load_state()
 
@@ -115,7 +99,7 @@ class BudgetLedger:
         """Load cumulative spend from the persist_path JSON file.
 
         A missing file → start at 0 (normal first run, no warning needed).
-        A corrupt/unreadable file → start at 0 + log a warning (§6: never crash).
+        A corrupt/unreadable file → start at 0 + log a warning (never crashes).
         The file must hold only numeric spend state — no secrets, no phone numbers.
         """
         path = Path(self.persist_path)  # type: ignore[arg-type]
@@ -128,7 +112,7 @@ class BudgetLedger:
             cum = _to_decimal(data.get("cumulative", "0"))
             live_cum = _to_decimal(data.get("live_cumulative", "0"))
             live_count = int(data.get("live_call_count", 0))
-        except Exception as exc:  # noqa: BLE001 — §6: corrupt file → start at 0
+        except Exception as exc:  # noqa: BLE001 — corrupt file → start at 0
             logger.warning(
                 "budget: corrupt ledger state file %s (%s) — starting at $0. "
                 "If this was unexpected, check the file manually.",
@@ -172,7 +156,7 @@ class BudgetLedger:
                 except OSError:
                     pass
                 raise
-        except Exception as exc:  # noqa: BLE001 — §6: log + continue, never crash
+        except Exception as exc:  # noqa: BLE001 — log + continue, never crash
             logger.error(
                 "budget: failed to persist ledger state to %s: %s — "
                 "cumulative spend may be lost across restarts.",
@@ -180,7 +164,7 @@ class BudgetLedger:
             )
 
     # ------------------------------------------------------------------
-    # Budget guard (the pre-call chokepoint — SEC3/CALL4)
+    # Budget guard (the pre-call chokepoint)
     # ------------------------------------------------------------------
 
     def budget_permits(self, projected: float, *, is_live: bool = False) -> bool:
@@ -290,12 +274,11 @@ _ledger: BudgetLedger | None = None
 def get_ledger() -> BudgetLedger:
     """Return (creating on first call) the persistent module-level BudgetLedger singleton.
 
-    The singleton uses _LEDGER_STATE_PATH (receipts/.budget_ledger.json, gitignored)
-    so the cumulative HARD_BUDGET_USD cap is real across separate process invocations
-    (Stage-8 security-HIGH fix). Both live entry points (orchestrate.py and
-    scripts/place_demo_call.py) call this so they share one cumulative total.
+    The singleton persists to receipts/.budget_ledger.json (gitignored), so the
+    cumulative cap holds across separate process invocations. Both live entry points
+    (the campaign runner and the demo-call script) call this and so share one total.
 
-    NOT constructed at import — call this inside a function/method only (ENV4).
+    NOT constructed at import — call this inside a function/method only.
     Tests that need isolation must create their own BudgetLedger() instances directly
     (without persist_path) rather than calling this singleton.
     """
@@ -340,9 +323,8 @@ def reset_ledger(*, also_delete_state_file: bool = False) -> None:
 def budget_permits(projected: float, *, is_live: bool = False) -> bool:
     """Module-level budget guard. Delegates to get_ledger().budget_permits().
 
-    This is the function the orchestrator and demo-call script call before
-    any place_call invocation (SEC3/CALL4). Tests that need isolation should
-    instantiate BudgetLedger directly.
+    This is the function the orchestrator and demo-call script call before any call is
+    placed. Tests that need isolation should instantiate BudgetLedger directly.
     """
     return get_ledger().budget_permits(projected, is_live=is_live)
 

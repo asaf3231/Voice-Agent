@@ -1,32 +1,21 @@
-"""Alta Outbound Voice Agent — app/persona.py
+"""Conversation design — Aria's dialog policy and live system prompt.
 
-Single responsibility: Aria's dialog policy — the conversation state machine
-(pitch → discovery → objection-handling → propose-slot → close), the two graded
-byte-exact literals (consumed from app.config, never redefined), the
-authoritative-content guardrail (CONV4/Policy 4), and the two A/B persona
-variants selected by a parameter (build_policy(variant="A"|"B")).
+Owns the conversation state machine (open → discovery/pitch → objection handling →
+propose a slot → close), the two A/B style variants, and the assembly of the live
+model's system prompt. The variants differ only in ordering, never in content:
 
-State machine (CONV1):
-    OPENING → {A: DISCOVERY→PITCH | B: PITCH} → OBJECTION* → PROPOSE_SLOT → CLOSE
-On MAX_AGENT_TURNS (or an error) the agent speaks FAILSAFE_HANGUP_LINE and ends
-(CONV5/CONV6). The disclosure is the FIRST utterance (mirrors the Stage-4 static
-first-message — CON2 offline).
+    A "Consultative" : open → ask a discovery question → pitch to the surfaced pain.
+    B "Direct"       : open → lead with the value-prop and ask for the meeting early.
 
-Variants (policy/ordering only — NEVER different content; both draw all
-pitch/objection text from the value-prop file at runtime, LEAK3):
-    A "Consultative / discovery-led" : disclosure → discovery question → pitch
-        tailored to the surfaced pain → objection handling → propose a slot.
-    B "Direct / value-first"         : disclosure → crisp value-prop + early
-        meeting ask → objection handling after → re-propose a slot.
+Every Alta claim the agent may state is loaded from the value-prop file at runtime —
+nothing is hardcoded — and the two spoken literals (the disclosure and the failsafe
+close) come from config so they cannot drift. On the turn cap or an error the agent
+speaks the failsafe line and ends.
 
-Import-safety (ENV4): defines only constants/functions/dataclasses. The value-prop
-file is read LAZILY (inside the policy at run time) via config.value_prop_path(),
-never at import. No network, no client, no .env. The two literals come from
-app.config so they cannot drift.
+This module drives the agent side of the offline simulator; the callee and the
+scoring rubric live alongside it in app/eval.
 
-This module owns the AGENT side; app/eval/simulated_callee.py owns the callee;
-app/eval/rubric.py scores the resulting transcript. The bake-off (run_bakeoff) wires
-all three. The PM independently re-runs the rubric — this module declares NO winner.
+Import-safe: the value-prop file is read lazily at run time, never at import.
 """
 
 from __future__ import annotations
@@ -47,7 +36,7 @@ from app.eval.simulated_callee import SimulatedCallee
 
 
 # ===========================================================================
-# Value-prop content, parsed from the value-prop file at RUNTIME (LEAK3)
+# Value-prop content, parsed from the value-prop file at runtime
 # ===========================================================================
 
 @dataclass(frozen=True)
@@ -56,7 +45,7 @@ class ValueProp:
 
     Nothing here is hardcoded: every field is extracted from the file the caller
     passes (or the repo default) at runtime. The agent may assert ONLY this
-    content (CONV4 / Policy 4).
+    content.
     """
 
     value_props: tuple[str, ...]            # the numbered core value propositions
@@ -69,7 +58,7 @@ def _read_text(path: Path | str | None) -> str:
     if not resolved.exists():
         raise FileNotFoundError(
             f"Value-prop file not found: {resolved}. "
-            "The agent grounds every claim in the value-prop file (LEAK3)."
+            "The agent grounds every claim in the value-prop file."
         )
     return resolved.read_text(encoding="utf-8")
 
@@ -97,7 +86,7 @@ def load_value_prop(path: Path | str | None = None) -> ValueProp:
       - the '## Objection responses' bullets → objection_responses (keyword→reply)
       - the '## Meeting pitch' quoted block → meeting_pitch
 
-    A missing file is a clean explicit error (mirrors LEAD1), not a mid-call crash.
+    A missing file is a clean explicit error, not a mid-call crash.
     """
     text = _read_text(path)
 
@@ -125,7 +114,7 @@ def load_value_prop(path: Path | str | None = None) -> ValueProp:
     if not value_props:
         raise ValueError(
             "The value-prop file parsed no '## Core value propositions' — the "
-            "format changed; the agent cannot pitch ungrounded content (CONV4)."
+            "format changed; the agent cannot pitch ungrounded content."
         )
 
     return ValueProp(
@@ -151,7 +140,7 @@ class DialogPolicy:
 
     The two variants share ALL content (drawn from ValueProp) and differ only in
     `stage_order` — the sequence of agent stages between the disclosure and the
-    close. This is the entire A/B contrast: policy, not content (LEAK3/CONV4).
+    close. This is the entire A/B contrast: policy, not content.
     """
 
     variant: str
@@ -206,8 +195,8 @@ class DialogRunner:
 
     The runner produces the AGENT turns from the policy + ValueProp; the
     SimulatedCallee produces the callee turns. It enforces the turn cap
-    (MAX_AGENT_TURNS → FAILSAFE_HANGUP_LINE, CONV5/CONV6) and never raises mid-call
-    (component failures become a FAILSAFE disposition, §6).
+    (MAX_AGENT_TURNS → FAILSAFE_HANGUP_LINE) and never raises mid-call (a component
+    failure becomes a FAILSAFE disposition).
     """
 
     def __init__(
@@ -221,10 +210,10 @@ class DialogRunner:
         self.vp = value_prop
         self.max_turns = max_turns
 
-    # -- agent utterance builders (all content from self.vp — LEAK3) --------
+    # -- agent utterance builders (all content from self.vp) ---------------
 
     def _disclosure_turn(self) -> Turn:
-        # Byte-exact, from config — the FIRST utterance (CON2 offline).
+        # Byte-exact, from config — the FIRST utterance.
         return Turn(speaker=Speaker.AGENT, text=DISCLOSURE_LINE, stage=Stage.OPENING)
 
     def _discovery_turn(self) -> Turn:
@@ -273,7 +262,7 @@ class DialogRunner:
         )
 
     def _failsafe_turn(self) -> Turn:
-        # Byte-exact, from config (CONV6).
+        # Byte-exact, from config.
         return Turn(speaker=Speaker.AGENT, text=FAILSAFE_HANGUP_LINE, stage=Stage.DONE)
 
     # -- the main loop ------------------------------------------------------
@@ -294,7 +283,7 @@ class DialogRunner:
             result.disposition = Disposition.VOICEMAIL
             return result
 
-        # 1. Disclosure first (CON2).
+        # 1. Disclosure first.
         self._emit(transcript, self._disclosure_turn(), result)
         if self._cap_hit(result):
             return self._failsafe(transcript, result)
@@ -348,13 +337,13 @@ class DialogRunner:
 
         Returns _HARD_NO if the callee has issued its final hard no (the agent
         must respect it); None otherwise. Each recovery is a scripted reply from
-        the value-prop file (CONV3), never a hang-up on the first objection.
+        the value-prop file, never a hang-up on the first objection.
         """
         last = transcript[-1]
         if last.speaker is not Speaker.CALLEE:
             return None
 
-        # A hard no is honored — respect the hang-up (Policy 6).
+        # A hard no is honored — respect the hang-up.
         if callee.hard_no_reached():
             return _HARD_NO
 
@@ -399,7 +388,7 @@ class DialogRunner:
     def _failsafe(
         self, transcript: list[Turn], result: ConversationResult
     ) -> ConversationResult:
-        """Speak FAILSAFE_HANGUP_LINE byte-exact and end (CONV5/CONV6)."""
+        """Speak FAILSAFE_HANGUP_LINE byte-exact and end."""
         transcript.append(self._failsafe_turn())
         result.disposition = Disposition.FAILSAFE
         return result
@@ -422,7 +411,7 @@ def run_conversation(
 ) -> ConversationResult:
     """Run a single deterministic offline conversation; return its result.
 
-    All content is loaded from the value-prop file at runtime (LEAK3); determinism
+    All content is loaded from the value-prop file at runtime; determinism
     comes from the seeded SimulatedCallee (config.RANDOM_SEED).
     """
     policy = build_policy(variant)
@@ -433,12 +422,12 @@ def run_conversation(
 
 
 # ===========================================================================
-# Live system prompt — assembled at RUNTIME from the value-prop (LEAK3)
+# Live system prompt — assembled at runtime from the value-prop
 # ===========================================================================
 
 # Variant-specific ordering guidance for the live model. These are POLICY hints
 # (the same A/B contrast as build_policy — ordering, not content); the assertable
-# facts are injected from the value-prop file, never from here (CONV4 / LEAK3).
+# facts are injected from the value-prop file, never from here.
 _VARIANT_PROMPT_GUIDANCE: dict[str, str] = {
     "A": (
         "Style: consultative / discovery-led. After the opening, ask ONE short "
@@ -457,11 +446,12 @@ def build_system_prompt(
     value_prop: ValueProp | None = None,
     *,
     value_prop_path: Path | str | None = None,
+    available_slots: list[dict] | None = None,
 ) -> str:
     """Assemble the LIVE model's system prompt from the chosen variant + value-prop.
 
     Every assertable Alta fact is injected from the value-prop content at runtime
-    (LEAK3 — no Alta claim is hardcoded here); the two graded literals are consumed
+    (no Alta claim is hardcoded here); the two graded literals are consumed
     from config (DISCLOSURE_LINE / FAILSAFE_HANGUP_LINE), never re-literaled. The
     prompt instructs: disclosure-first, pitch ONLY from the value-props, handle
     objections with the approved talking points, propose the 30-min meeting, book
@@ -469,11 +459,11 @@ def build_system_prompt(
 
     The disclosure is ALSO pinned to the platform static first-message (the
     chokepoint — see app/vapi_client.py); restating it here is belt-and-suspenders,
-    not the enforcement point (Red-Team Finding 4 / CON2).
+    not the enforcement point.
 
     Default variant is the LOCKED winner "A" (Consultative / discovery-led) —
-    the enriched Stage-6 A/B re-run gave A a 2x book-rate over B, tying on
-    disclosure/objection/compliance (NOTES 2026-06-23). It stays a parameter.
+    in the A/B bake-off, variant A booked at twice the rate of B while tying on
+    disclosure/objection/compliance. It stays a parameter.
 
     Args:
         variant:           "A" or "B" — selects the ordering guidance.
@@ -498,6 +488,27 @@ def build_system_prompt(
         variant.upper(), _VARIANT_PROMPT_GUIDANCE["A"]
     )
 
+    # Pre-fetched availability (optional): when the caller pulled slots BEFORE the
+    # call, inject them so Aria offers times INSTANTLY — no mid-call
+    # check_availability round-trip (the "give me a moment" at proposal time). She
+    # still calls check_availability only to RE-OFFER if the prospect rejects all.
+    slots_block = ""
+    if available_slots:
+        slot_lines = "\n".join(
+            f'  - "{s.get("say", "")}"  (book this one with slot_start_iso='
+            f'"{s.get("slot_start_iso") or s.get("start_utc") or s.get("slot_key", "")}")'
+            for s in available_slots
+        )
+        slots_block = (
+            "PRE-FETCHED MEETING TIMES (already pulled for THIS call — offer these "
+            "directly; do NOT call check_availability before your first proposal):\n"
+            f"{slot_lines}\n"
+            "Read two or three of the say-strings to the prospect VERBATIM, let them "
+            "pick, then call book_meeting with that slot's slot_start_iso. Call "
+            "check_availability ONLY if they reject all of these and want other "
+            "times.\n\n"
+        )
+
     return (
         "You are Aria, an assistant placing an outbound sales call on behalf of "
         "Alta. You are professional, warm, and concise.\n\n"
@@ -514,6 +525,7 @@ def build_system_prompt(
         "claim, price, ROI number, or customer name outside this list):\n"
         f"{value_props_block}\n\n"
         f"THE MEETING ASK: {vp.meeting_pitch}\n\n"
+        f"{slots_block}"
         f"MEETING LENGTH: always propose a single {BOOKING_SLOT_MINUTES}-minute meeting. "
         "Never offer a different duration (do not say 15 or 20 minutes).\n\n"
         "OBJECTION HANDLING (use these approved responses; recover before honoring "
@@ -528,10 +540,16 @@ def build_system_prompt(
         "do not repeat yourself or narrate every step. When slots come back, read two "
         "or three of their `say` strings to the prospect VERBATIM and let them pick — "
         "never compute, convert, or reword a date/time yourself. "
-        "log_disposition runs SILENTLY — NEVER voice \"one moment\" / \"just a sec\" "
-        "for it.\n\n"
+        "log_disposition runs SILENTLY — say NOTHING before, during, or after it "
+        "(no \"give me a moment\", no \"just a sec\"); it must NEVER produce a spoken "
+        "line.\n\n"
         "PACING: speak in short, complete sentences — one point at a time, then pause "
         "for the prospect; do not deliver the whole pitch in a single breath.\n\n"
+        "BOOKING CONFIRMATION (after book_meeting SUCCEEDS): confirm by reading back the "
+        "SPECIFIC day and time you just booked (e.g. \"You're booked for Monday, June 29 "
+        "at 3:30 PM\"), and tell them they'll get a calendar invite by email. If they ask "
+        "a final question (e.g. \"so now what?\"), ANSWER it briefly first — never ignore "
+        "it and hang up.\n\n"
         "ENDING THE CALL: when the conversation is done — the meeting is booked, the "
         "prospect declines the meeting or issues a hard no, you reach voicemail, or you "
         "hit a limit/error — say at most ONE short outcome line (e.g. \"Perfect, you're "

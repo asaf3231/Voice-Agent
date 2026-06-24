@@ -1,27 +1,13 @@
-"""Alta Outbound Voice Agent — scripts/inspect_call.py
+"""Inspect a live call's transcript with timestamps and interruption markers.
 
-Render a live Vapi call's transcript WITH per-utterance timestamps and an
-interruption marker, for debugging the live call experience (e.g. "the agent
-is not finishing his sentences" → look for `(INTERRUPTED)` Aria turns and the
-timing around them).
+Renders each utterance as `[mm:ss.s] ROLE: text`, flagging any agent line the caller
+cut off, plus a summary of how many of Aria's turns were interrupted — the direct
+signal when debugging "the agent isn't finishing its sentences."
 
-Usage:
-  python scripts/inspect_call.py <call_id> [<call_id> ...]
-  # or via Makefile:
-  make inspect CALL_IDS="019ef883 019ef86c"
+Usage: python scripts/inspect_call.py <call_id> ...   (or `make inspect`).
 
-What it shows per message:
-  [mm:ss.s] ROLE (INTERRUPTED if cut off): <text>
-and a summary footer: total Aria turns + how many were interrupted.
-
-The `(INTERRUPTED)` marker on an ARIA line is the direct signal for
-"not finishing sentences": Vapi flags an assistant message interrupted when
-the caller's audio (a real word, a backchannel, or line noise) trips the
-stopSpeakingPlan and cuts her off mid-utterance.
-
-Import-safety (ENV4): no side effects at module level — all live work is in
-main(), guarded by `if __name__ == "__main__"`. render_transcript() is a pure
-function (no network) so it is offline-testable with a sample call dict.
+Import-safe: live work is inside main(); the renderer is a pure function, so it is
+offline-testable with a sample call dict.
 """
 
 from __future__ import annotations

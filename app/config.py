@@ -1,13 +1,12 @@
-"""Alta Outbound Voice Agent — app/config.py
+"""Configuration — the single source of truth for tunable values.
 
-Single responsibility: the ONLY home for all §9 named constants, the two byte-exact
-graded literals, AGENT_TOOLS + its dispatch-identity assert, and the lazy settings
-loader. No client construction, no .env loading, no file I/O at import time.
+Holds every named constant (budget caps, call limits, model/provider ids), the two
+byte-exact spoken literals (the AI disclosure and the failsafe close), the agent's
+tool list, and the lazy environment/.env accessors. Keeping these in one place means
+no magic numbers or stray secrets live anywhere else.
 
-Import-safety contract (CLAUDE.md §3.4, ENV4):
-  Importing this module has zero side effects — no network, no .env read, no
-  data/* read, no client constructed, no call placed. The lazy loader reads
-  os.environ only when explicitly called.
+Import-safe: importing this module has zero side effects. Secrets are read from the
+environment only when a function is explicitly called, never at import time.
 """
 
 from __future__ import annotations

@@ -1,28 +1,16 @@
-"""Alta Outbound Voice Agent — scripts/stress_live.py
+"""Gated, sequential live stress-lane runner (`make stress-live`).
 
-The GATED, SEQUENTIAL live STRESS-lane runner (`make stress-live`).
+Places up to a bounded number of real calls, one at a time, to consented numbers for
+telephony/latency sign-off. Spend stays inside the live reserve, the per-call cap,
+and the $50 hard cap — all enforced by the same consent + budget gates as the demo
+path — and the actual cost is recorded after each call. Sequential only: never run it
+concurrently with another live caller against the shared budget ledger.
 
-Authorized 2026-06-24 (Asaf — graded change): place up to MAX_LIVE_STRESS_CALLS
-real calls SEQUENTIALLY to the consented numbers for telephony/latency sign-off,
-spend bounded by LIVE_CALL_BUDGET_USD=$15 (the real limiter), the unchanged $50
-HARD_BUDGET_USD, and the $1 per-call ceiling. SEQUENTIAL only: the persistent
-budget ledger has a documented cross-process TOCTOU (STR-C7) — never run this
-concurrently with `make call`/orchestrate against the live budget.
+This places real calls (real money), so it is a human-coordinated step (see
+docs/LIVE_RUNBOOK.md), never run autonomously.
 
-Governance (graded — same chokepoints as place_demo_call.py / orchestrate.py):
-  - consent_allows() MUST pass before place_call (CON1/SEC3).
-  - budget_permits(is_live=True) MUST pass before place_call (CALL4/SEC3) — this
-    enforces the per-call $1, the $50 hard cap, the $15 live reserve, AND the live
-    count ceiling (MAX_LIVE_STRESS_CALLS via the ledger's max_live_calls).
-  - actual cost is recorded AFTER each call so the cumulative cap stays real.
-
-The PM does NOT run this autonomously — it places real calls (real money). It is a
-human-coordinated step (see docs/LIVE_RUNBOOK.md) and requires the recording-notice
-compliance gate to be cleared for any number outside one-party-consent scope.
-
-Import-safety (ENV4): no side effects at module level. The runnable core
-`run_stress_lane(...)` takes injectables so the gating is OFFLINE-testable with a
-fake provider; main() wires the real provider/ledger/allowlist inside the guard.
+Import-safe: the runnable core takes injectables for offline testing; main() wires
+the real provider/ledger/allowlist inside the entry guard.
 """
 
 from __future__ import annotations
@@ -51,6 +39,7 @@ def run_stress_lane(
     projected_cost: float,
     max_calls: int,
     variant: str = "A",
+    available_slots: list[dict] | None = None,
 ):
     """Place up to *max_calls* gated, SEQUENTIAL live calls; return per-call outcomes.
 
@@ -82,7 +71,9 @@ def run_stress_lane(
             outcomes.append(StressCallOutcome(masked, "budget_halted"))
             break
 
-        assistant = provider.configure_assistant(variant=variant)
+        assistant = provider.configure_assistant(
+            variant=variant, available_slots=available_slots
+        )
         result = provider.place_call(to_number=number, assistant=assistant)
         if not result.ok:
             outcomes.append(StressCallOutcome(masked, "place_failed",
@@ -144,6 +135,20 @@ def main(argv: list[str] | None = None) -> int:
         max_live_calls=MAX_LIVE_STRESS_CALLS,
     )
 
+    # Pre-fetch availability once so every call offers times instantly (no mid-call
+    # hop); on failure pass None and Aria falls back to the live tool fetch.
+    from app import tools
+    from app.config import get_lead_context
+
+    _lead_id, lead_tz = get_lead_context()
+    available_slots = None
+    try:
+        avail = tools.dispatch("check_availability", lead_timezone=lead_tz)
+        if avail.ok and avail.data:
+            available_slots = avail.data.get("slots") or None
+    except Exception:  # noqa: BLE001 — degrade to the live-fetch path
+        available_slots = None
+
     # Sequential round-robin over the consented numbers.
     numbers = sorted(allowlist)
     sequence = [numbers[i % len(numbers)] for i in range(max_calls)] if numbers else []
@@ -155,6 +160,7 @@ def main(argv: list[str] | None = None) -> int:
         allowlist=allowlist,
         projected_cost=float(MAX_COST_PER_CALL_USD),
         max_calls=max_calls,
+        available_slots=available_slots,
     )
 
     placed = sum(1 for o in outcomes if o.status == "placed")

@@ -1,23 +1,13 @@
-"""Alta Outbound Voice Agent — app/testing/mock_bridge.py
+"""Mock bridge — fault injection at the webhook/transcript boundary for stress tests.
 
-Single responsibility: the MOCK-BRIDGE — a local fault-injection driver over the
-**webhook + transcript layer** for the stress suite (STR-T* / STR-P*).
+Our service does not own the audio path (the voice platform does), so the faults we
+can meaningfully inject are the ones that actually reach our code: malformed and
+redelivered webhook envelopes, call-status events (including mid-call drops), garbled
+transcripts, and wrong-secret (fail-closed) auth under load. True media-level checks
+(real barge-in, disclosure under impairment) live only on the live-gated tier.
 
-Scoping truth (do not over-claim): our service does NOT own the media path — the
-voice platform (Vapi) does. So raw SIP packet loss / SNR / codec faults cannot be
-injected at our boundary; what reaches our code is **Vapi webhook envelopes** and
-**transcripts**. This bridge exercises exactly those fault EFFECTS:
-  - well-formed and MALFORMED Vapi tool-call envelopes (missing toolCallId, flat vs
-    nested, stringified args, garbled-JSON args, empty / no-tool-call),
-  - call-status / lifecycle webhooks (incl. mid-call drop signals),
-  - webhook REDELIVERY (the same envelope posted N times),
-  - garbled / lossy transcripts (the STT/SNR effect on a string),
-  - a WRONG secret (fail-closed auth under load).
-True RTP-level validation (real barge-in, disclosure-under-impairment) lives only on
-the LIVE-GATED tier and is read back with scripts/inspect_call.py.
-
-Import-safety (ENV4): importing this module builds NO client, reads NO .env, opens NO
-network. The FastAPI TestClient is constructed LAZILY on first use inside the bridge.
+Import-safe: no client or network at import; the test client is built lazily on first
+use.
 """
 
 from __future__ import annotations

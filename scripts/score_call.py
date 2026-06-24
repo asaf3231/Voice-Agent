@@ -1,23 +1,15 @@
-"""Alta Outbound Voice Agent — scripts/score_call.py
+"""Score a real call on whether the agent qualified and tailored its pitch.
 
-Live proof for Bug 2: score a REAL Vapi call on whether the agent actually used
-the `qualify` tool and tailored its pitch to the surfaced pain — the only thing
-that proves the unenforced qualify fix works (the model isn't forced to call it).
+Fetches a Vapi call and reports whether the model actually called the qualify tool,
+the discovery answer it passed, the value-prop it was told to lead with, the
+round-trip latency that cost, and whether the resulting pitch reflected the surfaced
+pain. Because the model isn't forced to call qualify, this is the only thing that
+proves the behavior holds on a live call.
 
-What it reports for a call:
-  - qualify_fired      : did gpt-4o actually CALL the qualify tool?
-  - qualify_answer     : the discovery answer it passed
-  - qualify_emphasize  : the value-prop qualify told it to lead with
-  - qualify_latency_s  : the mid-call round-trip the tool cost (the speed tradeoff)
-  - pitch_tailored     : rubric.pitch_tailored over the (answer → pitch) pair
+Usage: python scripts/score_call.py <call_id>   (newest if omitted; or `make score`).
 
-Usage:
-  python scripts/score_call.py <call_id>          # newest if omitted
-  make score CALL_ID=019ef90c-...
-
-evaluate_call() is a pure function over a Vapi call dict (no network) so the
-scoring logic is deterministic and inspectable; main() does the live fetch.
-Import-safety (ENV4): no work at module level.
+The scoring function is pure (operates on a call dict, no network); main() does the
+live fetch. Import-safe: no work at module level.
 """
 
 from __future__ import annotations

@@ -1,33 +1,14 @@
-"""Alta Outbound Voice Agent — app/orchestrate.py
+"""Campaign runner — dials a list of leads under the governance gates.
 
-Single responsibility: the campaign runner — iterates the synthetic lead list
-and, for every lead, in this exact order:
-  1. Suppress do_not_call=True leads (CON5).
-  2. Consent gate (CON1) — consent_allows(phone_e164, do_not_call=...) must pass;
-     a non-allowlisted number is refused with a structured disposition and NEVER
-     reaches place_call.
-  3. Budget guard (CALL4/SEC3) — budget_permits(projected_cost, is_live=...) must
-     pass BEFORE dialing; over-budget ⇒ the campaign halts cleanly.
-  4. Only then call the injected VoiceProvider.place_call(...).
+For each lead, in order: skip do-not-call, check consent, run the budget guard, then
+place the call — so nothing reaches the dialer without passing both gates. No-answers
+retry up to a fixed limit; a daily cap defers (rather than drops) further leads; and
+the campaign halts cleanly once the budget is exhausted. Provider failures become
+structured dispositions, never crashes. Also provides the validated leads/ICP loaders
+shared with the tests.
 
-Governance:
-  - CALL1: any provider error / CallResult(ok=False) → structured disposition;
-    campaign continues; no uncaught exception.
-  - CALL2: a no-answer retries up to CALL_RETRY_MAX times, then dispositions.
-  - CALL3: ≤ DAILY_CALL_CAP calls/day; the (N+1)th is DEFERRED (recorded), not
-    silently dropped.
-  - CALL4: budget guard runs BEFORE every dial (SEC3 cross-check).
-
-Leads loader (LEAD1):
-  load_leads() and load_icp() are the validated, runtime app loaders. They are
-  promoted from tests/test_leads.py so the same logic runs in production and in
-  tests (no duplicated logic). Tests import them from here.
-
-Import-safety (ENV4):
-  Importing this module defines ONLY constants, dataclasses, and functions.
-  No VoiceProvider client is constructed, no .env is read, no data/* is read,
-  no network call, no place_call at import. Clients are injected or resolved
-  lazily when run() is called.
+Import-safe: no client, .env, data, or network access at import; clients are injected
+or resolved lazily when run() is called.
 """
 
 from __future__ import annotations
@@ -56,25 +37,24 @@ logger = logging.getLogger(__name__)
 # This is a per-call cost ESTIMATE (the actual cost is recorded after the call
 # completes). Set conservatively at MAX_COST_PER_CALL_USD so we never permit a
 # call whose worst-case cost would exceed the per-call ceiling.
-# NOT a §9 constant — it is a local orchestration heuristic (the spec allows a
-# "named module constant in orchestrate.py, NOT a §9 change").
+# It is a local orchestration heuristic, not a governance constant.
 # ---------------------------------------------------------------------------
 PROJECTED_COST_PER_CALL: float = MAX_COST_PER_CALL_USD
 
-# Required fields for a lead record (mirrors CLAUDE.md §4 / LEAD1)
+# Required fields for a lead record
 _REQUIRED_LEAD_FIELDS = frozenset({"lead_id", "first_name", "company", "phone_e164"})
 
 
 # ---------------------------------------------------------------------------
-# Leads / ICP loaders — promoted from tests/test_leads.py (Stage 5, brief §)
-# The test module now imports these to avoid duplicated logic (§8 / LEAD1).
+# Leads / ICP loaders — the validated runtime loaders. The tests import these
+# too, so the same validation runs in production and in the suite.
 # ---------------------------------------------------------------------------
 
 def load_leads(path: Path | str) -> list[dict]:
     """Load and validate leads from *path*. Raises ValueError on schema error.
 
-    LEAD1: every required field present → ValueError (not KeyError) on violation.
-    No hardcoded lead/company/phone values in this code (LEAK3).
+    Every required field must be present → ValueError (not KeyError) on violation.
+    No lead/company/phone values are hardcoded here — they come from the file.
     """
     p = Path(path)
     if not p.exists():
@@ -123,11 +103,11 @@ def load_icp(path: Path | str) -> dict:
 
 @dataclass
 class CallDisposition:
-    """Structured outcome of one call attempt (CALL1 — never an exception).
+    """Structured outcome of one call attempt (never an exception).
 
     Fields:
       lead_id:    the lead's id.
-      phone:      the masked phone (LEAK2: last 2 digits only).
+      phone:      the masked phone (last 2 digits only).
       status:     one of: 'booked', 'declined', 'no_answer', 'voicemail',
                   'error', 'suppressed', 'consent_refused', 'budget_halted',
                   'daily_cap_deferred'.
@@ -186,14 +166,14 @@ def _dial_one(
     halt the campaign after recording the disposition.
 
     The consent gate and budget guard are the ONLY code paths to place_call.
-    This function is the single chokepoint — no path bypasses them (CON1/CALL4).
+    This function is the single chokepoint — no path bypasses them.
     """
     lead_id = lead["lead_id"]
     phone = lead["phone_e164"]
     masked = mask_phone(phone)
 
     for attempt in range(1, CALL_RETRY_MAX + 2):  # 1, 2, 3 (max_retries+1 = 3 attempts)
-        # -- budget guard (SEC3/CALL4): MUST run before EVERY dial attempt --
+        # -- budget guard: MUST run before EVERY dial attempt --
         if not ledger.budget_permits(PROJECTED_COST_PER_CALL, is_live=is_live):
             logger.warning(
                 "Budget exhausted before dial attempt %d for lead %s (%s)",
@@ -217,7 +197,7 @@ def _dial_one(
 
         try:
             result = provider.place_call(to_number=phone, assistant=assistant)
-        except Exception as exc:  # noqa: BLE001 — §6: component failures are data
+        except Exception as exc:  # noqa: BLE001 — component failures are data
             logger.error("Provider raised on dial %s attempt %d: %s", lead_id, attempt, exc)
             if attempt > CALL_RETRY_MAX:
                 return (
@@ -250,23 +230,35 @@ def _dial_one(
             continue  # retry
 
         # -- call placed successfully; record cost --
+        # Record the ACTUAL final cost when available, else the conservative
+        # PROJECTED_COST_PER_CALL estimate — NEVER $0 (the cost-0-vs-null bug). A live
+        # call's cost is only final once it ends; fetching here (just after place_call)
+        # returns ok=False/cost_pending, so we book the estimate to keep the cumulative
+        # HARD_BUDGET_USD cap honest, then reconcile to the exact figure post-hoc via
+        # capture_receipts.py. (For non-live/fake-provider tests, ok=True is returned
+        # immediately and the actual scripted cost is recorded as before.)
         call_id = result.call_id
-        actual_cost = 0.0
+        actual_cost = float(PROJECTED_COST_PER_CALL)
         try:
             cost_result = provider.fetch_call_cost(call_id=call_id)
             if cost_result.ok and cost_result.cost_usd is not None:
                 actual_cost = cost_result.cost_usd
-                ledger.record_cost(actual_cost, is_live=is_live)
             else:
                 logger.warning(
-                    "Could not fetch cost for call %s (%s): %s",
-                    call_id, lead_id, cost_result.message,
+                    "Cost not final for call %s (%s): %s — recording projected estimate $%.4f",
+                    call_id, lead_id, cost_result.message, actual_cost,
                 )
+            ledger.record_cost(actual_cost, is_live=is_live)
         except Exception as exc:  # noqa: BLE001 — cost fetch failure is not fatal
-            logger.warning("Cost fetch raised for call %s: %s", call_id, exc)
+            logger.warning("Cost fetch raised for call %s: %s — recording estimate $%.4f",
+                           call_id, exc, actual_cost)
+            try:
+                ledger.record_cost(actual_cost, is_live=is_live)
+            except Exception as rec_exc:  # noqa: BLE001 — never crash the campaign
+                logger.error("Failed to record cost for call %s: %s", call_id, rec_exc)
 
         # Determine disposition from the call status.
-        # "no_answer" is the only provider status that triggers a retry (CALL2).
+        # "no_answer" is the only provider status that triggers a retry.
         # All other statuses (queued, ringing, in-progress, ended, booked, etc.)
         # mean the call was accepted / connected — no retry needed.
         raw_status = result.status or ""
@@ -331,11 +323,11 @@ def run(
     """Run the outbound campaign over *leads*.
 
     For each lead, in exact order:
-      1. Suppress do_not_call=True (CON5).
-      2. Consent gate — consent_allows() before place_call (CON1).
-      3. Budget guard — budget_permits() before place_call (CALL4/SEC3).
-      4. Dial via provider.place_call() (CALL1/CALL2).
-      5. Enforce daily cap (CALL3).
+      1. Suppress do_not_call=True.
+      2. Consent gate — consent_allows() before place_call.
+      3. Budget guard — budget_permits() before place_call.
+      4. Dial via provider.place_call().
+      5. Enforce daily cap.
 
     Args:
       leads:     a list of validated lead dicts (from load_leads()).
@@ -365,7 +357,7 @@ def run(
         masked = mask_phone(phone) if phone else "<no-phone>"
         do_not_call = bool(lead.get("do_not_call", False))
 
-        # -- STEP 1: suppress do_not_call leads (CON5) -----------------------
+        # -- STEP 1: suppress do_not_call leads -----------------------------
         if do_not_call:
             logger.info("Suppressing DNC lead %s (%s)", lead_id, masked)
             result.dispositions.append(CallDisposition(
@@ -376,7 +368,7 @@ def run(
             ))
             continue
 
-        # -- STEP 2: consent gate (CON1) — SINGLE CHOKEPOINT -----------------
+        # -- STEP 2: consent gate — SINGLE CHOKEPOINT -----------------------
         if not consent_allows(phone, do_not_call=do_not_call, allowlist=allowlist):
             logger.info("Consent refused for lead %s (%s)", lead_id, masked)
             result.dispositions.append(CallDisposition(
@@ -387,7 +379,7 @@ def run(
             ))
             continue
 
-        # -- STEP 3: daily cap (CALL3) — deferred, not dropped ---------------
+        # -- STEP 3: daily cap — deferred, not dropped ---------------------
         if calls_today >= DAILY_CALL_CAP:
             logger.warning(
                 "Daily cap (%d) reached; deferring lead %s (%s)",
@@ -402,7 +394,7 @@ def run(
             result.daily_cap_hit = True
             continue
 
-        # -- STEP 4: budget guard (CALL4/SEC3) + dial (CALL1/CALL2) ----------
+        # -- STEP 4: budget guard + dial -----------------------------------
         disposition, budget_ok = _dial_one(
             lead,
             provider=provider,
@@ -425,7 +417,7 @@ def run(
             disposition.attempts, disposition.cost_usd or 0.0,
         )
 
-        # -- STEP 5: halt on over-budget (CALL4) -----------------------------
+        # -- STEP 5: halt on over-budget -----------------------------------
         if not budget_ok:
             result.halted = True
             result.halt_reason = (
@@ -439,7 +431,7 @@ def run(
 
 
 # ---------------------------------------------------------------------------
-# Lazy default ledger helper (avoids module-level side effects — ENV4)
+# Lazy default ledger helper (avoids module-level side effects)
 # ---------------------------------------------------------------------------
 
 def _get_default_ledger() -> BudgetLedger:

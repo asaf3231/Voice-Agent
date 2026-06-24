@@ -1,28 +1,13 @@
-"""Alta Outbound Voice Agent — scripts/capture_receipts.py
+"""Capture per-call cost receipts — the spend evidence for the $50 budget.
 
-Capture a per-call cost receipt from the voice provider and write a REDACTED
-record under receipts/. Satisfies SEC5 / LIVE4.
+Pulls the final cost for one or more call ids and writes a redacted receipt to
+receipts/<call_id>.json. Each receipt holds only the call id, the cost, and a
+timestamp — never a phone number, account id, or any secret — and the cost is read
+straight from the provider rather than copied from elsewhere.
 
-Usage:
-  python scripts/capture_receipts.py <call_id> [<call_id> ...]
-  # or via Makefile:
-  make receipts CALL_IDS="call_abc123 call_def456"
+Usage: python scripts/capture_receipts.py <call_id> ...   (or `make receipts`).
 
-What it writes (receipts/<call_id>.json):
-  {
-    "call_id": "<call_id>",          # the provider call identifier
-    "cost_usd": 0.1234,              # reported by fetch_call_cost — verified, not asserted
-    "timestamp": "2026-06-23T20:00:00Z"  # ISO-8601 UTC capture time
-  }
-
-Redaction contract (CLAUDE.md §5 anti-leakage / LEAK2):
-  - NO full phone number (use mask_phone if any phone appears)
-  - NO account id or API key
-  - NO secret of any kind
-  The file holds ONLY: call_id, cost_usd (float), and timestamp (ISO-8601 UTC).
-
-Import-safety (ENV4): no side effects at module level.
-All work is inside main(), guarded by `if __name__ == "__main__"`.
+Import-safe: all work is inside main(); importing has no side effects.
 """
 
 from __future__ import annotations

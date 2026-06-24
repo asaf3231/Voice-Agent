@@ -1,29 +1,15 @@
-"""Alta Outbound Voice Agent — app/vapi_client.py
+"""Voice provider adapter — the only path out to the telephony platform.
 
-Single responsibility: the `VoiceProvider` adapter — the ONLY egress to the
-telephony/voice platform (CLAUDE.md §1.2 / OQ-VOICE-2: Vapi primary, adapter
-mandatory so Retell is a config swap, never a rewrite). Two parts live here:
+Defines the VoiceProvider interface (configure_assistant / place_call /
+fetch_call_cost) and its Vapi implementation, so the platform stays a config swap
+rather than a rewrite. configure_assistant is a pure builder (offline-callable) that
+wires the model, the tools, and — the key compliance detail — pins the AI disclosure
+to the platform's static first message, so it is spoken verbatim rather than left to
+the model to paraphrase. place_call and fetch_call_cost reach the live API through a
+lazy HTTP client and surface any failure as structured data, never an exception.
 
-  - `VoiceProvider` — the graded interface (CLAUDE.md §9) with EXACTLY three
-    methods: `configure_assistant(...)`, `place_call(...)`, `fetch_call_cost(...)`.
-    These signatures are a graded contract — do not rename or change them.
-  - `VapiVoiceProvider` — the Vapi implementation:
-      * `configure_assistant(...)` is a PURE BUILDER (no network, offline-callable):
-        it wires LLM_MODEL, the system prompt, the 5 tool/function definitions
-        (names == AGENT_TOOLS), and DISCLOSURE_LINE pinned to Vapi's STATIC
-        first-message field (`firstMessage`), byte-exact (VOICE1 / CON2 / Red-Team
-        Finding 4 — NOT a prompt the model could paraphrase). Recording is enabled
-        ONLY together with the disclosure (CON3).
-      * `place_call(...)` / `fetch_call_cost(...)` are the LIVE outbound + cost-pull,
-        over a LAZY httpx client built only by `_get_vapi()`. A live failure is
-        structured data, never a crash (§6).
-
-Import-safety (ENV4): importing this module defines only constants, dataclasses,
-classes, and functions. No client, no network, no .env read, no call. The
-module-level Vapi singleton (`_vapi`) is None at import; only the lazy
-`_get_vapi()` constructs it, reading VAPI_API_KEY / VAPI_PHONE_NUMBER_ID via
-config WHEN CALLED (never at import, never in the offline suite). The two graded
-literals come from app.config so they cannot drift.
+Import-safe: no client, network, or .env access at import; the HTTP client is built
+on first live use only.
 """
 
 from __future__ import annotations
@@ -47,27 +33,30 @@ from app.config import (
 )
 from app.persona import build_system_prompt, load_value_prop
 
-# Turn-taking + pacing tuning (Vapi-specific knobs, NOT §9 governance).
+# Turn-taking + pacing tuning (Vapi-specific knobs, not governance).
 #  stopSpeakingPlan: brief backchannels ("okay", "mm-hm") / line noise must not cut
-#    Aria off mid-sentence — `numWords=3` ⇒ the caller must say 3+ words before she
-#    stops; `backoffSeconds` ⇒ pause before resuming after a real interruption.
+#    Aria off mid-sentence — `numWords=2` ⇒ the caller must say 2+ words before she
+#    stops; `voiceSeconds=0.25` ⇒ ~250ms of voice to confirm it isn't noise;
+#    `backoffSeconds=0.8` ⇒ pause before resuming after a real interruption
+#    (tuned toward a snappier, industry-standard barge-in; numWords stays at 2 —
+#    going to 1 would need STT backchannel filtering first).
 #  startSpeakingPlan.waitSeconds: how long to wait after the caller stops before Aria
-#    replies — lowered 0.6→0.4→0.3 to cut the response lag (Asaf live reviews 2026-06-24).
+#    replies — lowered to 0.3 to cut the response lag.
 #  _TTS_SPEED: OpenAI-TTS playback rate (1.0 = normal). 1.1 ⇒ slightly faster than
-#    normal — 1.2 was a touch too fast on the live call (Asaf review 2026-06-24).
+#    normal — 1.2 was a touch too fast on the live call.
 #    Tunable; Vapi range 0.25–4.0.
-_STOP_SPEAKING_PLAN = {"numWords": 3, "voiceSeconds": 0.3, "backoffSeconds": 1.5}
+_STOP_SPEAKING_PLAN = {"numWords": 2, "voiceSeconds": 0.25, "backoffSeconds": 0.8}
 _START_SPEAKING_PLAN = {"waitSeconds": 0.3}
 _TTS_SPEED = 1.1
 
 
 # ===========================================================================
-# Structured result types (no exceptions across the seam, §6)
+# Structured result types (no exceptions across the seam)
 # ===========================================================================
 
 @dataclass(frozen=True)
 class CallResult:
-    """The structured outcome of a place_call attempt (never an exception, §6).
+    """The structured outcome of a place_call attempt (never an exception).
 
     ok=True  → call_id identifies the placed call; status carries the provider's
                call status if already known.
@@ -84,10 +73,13 @@ class CallResult:
 
 @dataclass(frozen=True)
 class CostResult:
-    """The structured outcome of a fetch_call_cost attempt (§6).
+    """The structured outcome of a fetch_call_cost attempt.
 
-    ok=True  → cost_usd is the provider-reported cost for the call.
-    ok=False → error/message explain why; cost_usd is None.
+    ok=True  → cost_usd is the provider-reported, FINAL cost for the call.
+    ok=False → error/message explain why; cost_usd is None. error="cost_pending"
+               specifically means the call has not ended yet, so its cost is not
+               final — the caller should retry later or record a conservative
+               projected estimate, NEVER the pre-final figure.
     """
 
     ok: bool
@@ -96,19 +88,55 @@ class CostResult:
     message: str | None = None
 
 
+# Vapi call statuses that mean the call has FINISHED and its `cost` field is final.
+# CRITICAL (cost-0-vs-null bug, 2026-06-24): while a call is still queued/ringing/
+# in-progress, Vapi reports `cost` as 0 — NOT null. The old guard only rejected a
+# null cost, so a 0 from a not-yet-ended call sailed through as a "successful" $0.00
+# and was recorded into the ledger (5 live calls → cumulative $0.00), silently
+# under-counting spend and defeating the HARD_BUDGET_USD cap. Cost is trusted ONLY
+# once the call has ended.
+_TERMINAL_CALL_STATUSES = frozenset({"ended"})
+
+
+def _cost_from_call(data: dict[str, Any]) -> CostResult:
+    """Derive a CostResult from a Vapi call object, treating cost as final ONLY when ended.
+
+    - Not yet ended  → ok=False, error="cost_pending" (the 0-vs-null fix): the `cost`
+      field is 0/partial until the call ends, so it must not be recorded as actual spend.
+    - Ended, no cost → ok=False, error="cost_unavailable": ended but Vapi hasn't attached
+      a cost yet (brief end-of-call-report lag) — retry shortly.
+    - Ended, cost set → ok=True with the final figure (a genuinely free call ⇒ 0.0 is fine
+      precisely because the call has ended and that 0 is authoritative).
+    """
+    status = str(data.get("status") or "").lower()
+    raw_cost = data.get("cost")
+    if status not in _TERMINAL_CALL_STATUSES:
+        shown = status or "unknown"
+        return CostResult(
+            ok=False, error="cost_pending",
+            message=f"call status={shown!r}; cost is not final until the call ends",
+        )
+    if raw_cost is None:
+        return CostResult(
+            ok=False, error="cost_unavailable",
+            message="call ended but Vapi has not reported a cost yet — retry shortly",
+        )
+    return CostResult(ok=True, cost_usd=float(raw_cost))
+
+
 # ===========================================================================
 # The VoiceProvider interface — the ONLY way out to the voice platform.
-# Graded signatures (CLAUDE.md §9): configure_assistant / place_call /
-# fetch_call_cost. Do NOT change these.
+# These three method signatures are the contract: configure_assistant /
+# place_call / fetch_call_cost. Do NOT change them.
 # ===========================================================================
 
 @runtime_checkable
 class VoiceProvider(Protocol):
-    """The voice-platform seam (CLAUDE.md §9 / OQ-VOICE-2 adapter mandate).
+    """The voice-platform seam — the single egress to the voice platform.
 
     The single egress for outbound call control + assistant config. Swapping the
     implementation (Vapi ↔ Retell ↔ the test fake) must not touch
-    orchestrate.py / server.py — they depend only on this interface (VOICE5).
+    orchestrate.py / server.py — they depend only on this interface.
     """
 
     def configure_assistant(
@@ -135,7 +163,7 @@ class VoiceProvider(Protocol):
 
 
 # ===========================================================================
-# Tool/function JSON-schema definitions (names == AGENT_TOOLS — VOICE1)
+# Tool/function JSON-schema definitions (names == AGENT_TOOLS)
 # ===========================================================================
 
 def _tool_schemas(
@@ -154,7 +182,7 @@ def _tool_schemas(
     knows WHERE to POST the tool invocation (without it → "No result returned").
     If *server_secret* is given too, it is set as `server.secret`, which Vapi sends
     back as the `x-vapi-secret` header so our webhook auth passes (without it →
-    the webhook 401s and the tool result is "unauthorized" — live fix 2026-06-24).
+    the webhook 401s and the tool result is "unauthorized").
     """
     schemas: list[dict[str, Any]] = [
         {
@@ -267,11 +295,11 @@ def _tool_schemas(
 # ===========================================================================
 
 class VapiVoiceProvider:
-    """The Vapi VoiceProvider (CLAUDE.md §1.2). The only Vapi-specific code.
+    """The Vapi implementation of VoiceProvider — the only Vapi-specific code.
 
     `configure_assistant` is a pure builder (offline-safe, no network). `place_call`
     / `fetch_call_cost` reach the live REST API through the LAZY `_get_vapi()` client
-    only — never at import, never in the offline suite (ENV4 / VOICE4).
+    only — never at import, never in the offline suite.
     """
 
     BASE_URL = "https://api.vapi.ai"
@@ -284,21 +312,29 @@ class VapiVoiceProvider:
         variant: str = "A",
         value_prop_path: str | None = None,
         lead: dict[str, Any] | None = None,
+        available_slots: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        """Build the Vapi assistant payload (VOICE1 / CON2 / CON3).
+        """Build the Vapi assistant payload.
 
         Wires LLM_MODEL, the runtime-assembled system prompt, the 5 tool
         definitions, and — the graded chokepoint — DISCLOSURE_LINE in the STATIC
         first-message field (`firstMessage`), byte-exact and consumed from config
         (NOT a prompt the model could paraphrase). Recording is enabled together
-        with the disclosure (CON3). Pure: no network, callable offline.
+        with the disclosure. Pure: no network, callable offline.
+
+        *available_slots* (optional): slots pre-fetched at call setup, injected into
+        the system prompt so Aria proposes times instantly without a mid-call
+        check_availability round-trip. Additive (like *lead*); the graded
+        VoiceProvider signature is unchanged.
         """
         vp = load_value_prop(value_prop_path)
-        system_prompt = build_system_prompt(variant, vp)
+        system_prompt = build_system_prompt(
+            variant, vp, available_slots=available_slots
+        )
 
         # Authoritative lead context → assistant metadata. Sourced from the lead
         # record if supplied, else from the env-backed get_lead_context() so the
-        # webhook can recover the same values (D2/D3 — the model never supplies them).
+        # webhook can recover the same values (the model never supplies them).
         if lead is not None:
             lead_id = lead.get("lead_id") or lead.get("id")
             lead_timezone = lead.get("timezone") or lead.get("lead_timezone")
@@ -315,7 +351,7 @@ class VapiVoiceProvider:
         tool_server_secret = get_setting("VAPI_WEBHOOK_SECRET")
 
         return {
-            # Standard pipeline (OQ-VOICE-1 revised 2026-06-24): a chat LLM, a
+            # Standard pipeline: a chat LLM, a
             # dedicated TTS voice, and a transcriber — robust telephony audio,
             # unlike realtime speech-to-speech which fragmented/paused on the phone.
             "model": {
@@ -332,18 +368,18 @@ class VapiVoiceProvider:
                 "model": TRANSCRIBER_MODEL,
                 "language": "en",
             },
-            # CHOKEPOINT (VOICE1/CON2/Finding 4): the disclosure is the platform's
+            # CHOKEPOINT: the disclosure is the platform's
             # static first message — spoken VERBATIM by the platform, byte-exact,
             # never model-generated. Consumed from config (DISCLOSURE_LINE).
             "firstMessage": DISCLOSURE_LINE,
             "firstMessageMode": "assistant-speaks-first",
-            # CON3 (updated 2026-06-24, Asaf): recording stays ON and ships in the
+            # Recording stays ON and ships in the
             # same payload as the verbatim AI disclosure (firstMessage above). The
             # spoken *recording notice* was dropped from DISCLOSURE_LINE — recording
             # without a spoken notice is lawful only for the one-party-consent
             # consented test line; restore a notice before two-party-consent use.
             "recordingEnabled": True,
-            # CLEAN HANGUP (D9/D4/D5, 2026-06-24): pin termination to the PLATFORM.
+            # CLEAN HANGUP: pin termination to the PLATFORM.
             # endCallFunctionEnabled lets a decision-to-end ACTUALLY hang up (a custom
             # end_call tool returned JSON but never terminated → the agent rambled past
             # "goodbye"; that tool is retired). END_CALL_MESSAGE is the byte-exact close
@@ -353,10 +389,10 @@ class VapiVoiceProvider:
             # like x-vapi-secret / the model id / the tool-result envelope.)
             "endCallFunctionEnabled": True,
             "endCallMessage": END_CALL_MESSAGE,
-            # Anti-loop / cost guard mirrors the wall-clock cap (§9).
+            # Anti-loop / cost guard mirrors the wall-clock cap.
             "maxDurationSeconds": MAX_CALL_DURATION_S,
             # Turn-taking so brief backchannels don't fragment the agent's speech
-            # (live "fragmented voice" fix 2026-06-24).
+            # (fixes the "fragmented voice" seen on live calls).
             "stopSpeakingPlan": _STOP_SPEAKING_PLAN,
             "startSpeakingPlan": _START_SPEAKING_PLAN,
             # Only include lead keys when set — a None would serialize as JSON null,
@@ -377,12 +413,12 @@ class VapiVoiceProvider:
         to_number: str,
         assistant: dict[str, Any],
     ) -> CallResult:
-        """Place an outbound call via Vapi (live). Any failure → structured data (§6).
+        """Place an outbound call via Vapi (live). Any failure → structured data.
 
         Reads VAPI_PHONE_NUMBER_ID via config and dials through the lazy client.
         Never raises across this boundary — a misconfig or HTTP error is a
         CallResult(ok=False), so the campaign runner is never crashed by the
-        provider (CALL1).
+        provider.
         """
         try:
             phone_number_id = require_setting("VAPI_PHONE_NUMBER_ID")
@@ -412,11 +448,17 @@ class VapiVoiceProvider:
                 return CallResult(ok=False, error="vapi_error",
                                   message="Vapi returned no call id")
             return CallResult(ok=True, call_id=call_id, status=data.get("status"))
-        except Exception as exc:  # noqa: BLE001 — surface as data (§6)
+        except Exception as exc:  # noqa: BLE001 — surface as data
             return CallResult(ok=False, error="vapi_error", message=str(exc))
 
     def fetch_call_cost(self, *, call_id: str) -> CostResult:
-        """Return the Vapi-reported cost for *call_id* (live). Failure → data (§6)."""
+        """Return the Vapi-reported FINAL cost for *call_id* (live). Failure → data.
+
+        Status-aware (cost-0-vs-null fix): a cost is returned ok=True ONLY once the
+        call has ended; before that Vapi reports `cost` as 0 and we surface
+        ok=False/error="cost_pending" so the caller never records a fake $0. See
+        _cost_from_call. The 3 graded method signatures are unchanged.
+        """
         try:
             client = _get_vapi()
             resp = client.get(f"/call/{call_id}")
@@ -425,14 +467,44 @@ class VapiVoiceProvider:
                     ok=False, error="vapi_error",
                     message=f"HTTP {resp.status_code} from Vapi /call/{call_id}: {resp.text[:500]}",
                 )
-            data = resp.json()
-            raw_cost = data.get("cost")
-            if raw_cost is None:
-                return CostResult(ok=False, error="vapi_error",
-                                  message="Vapi returned no cost for the call")
-            return CostResult(ok=True, cost_usd=float(raw_cost))
-        except Exception as exc:  # noqa: BLE001 — surface as data (§6)
+            return _cost_from_call(resp.json())
+        except Exception as exc:  # noqa: BLE001 — surface as data
             return CostResult(ok=False, error="vapi_error", message=str(exc))
+
+    def fetch_call_cost_settled(
+        self,
+        *,
+        call_id: str,
+        max_wait_s: int = 180,
+        interval_s: int = 6,
+        sleeper: Any | None = None,
+    ) -> CostResult:
+        """Poll fetch_call_cost until the call's cost is FINAL (ended) or a timeout.
+
+        Returns the final CostResult on success, or the last non-ok result (typically
+        error="cost_pending") on timeout — so the caller's projected-estimate fallback
+        fires, NEVER a fake $0. A non-pending hard failure (e.g. vapi_error) returns
+        immediately; only "cost_pending"/"cost_unavailable" are retried.
+
+        Not part of the graded VoiceProvider interface (a concrete-adapter helper, like
+        fetch_call) — so the 3 graded signatures stay frozen. *sleeper* is injectable so
+        the offline suite drives the poll with zero real wall-clock.
+        """
+        import time as _time
+
+        sleep = sleeper if sleeper is not None else _time.sleep
+        attempts = max(1, int(max_wait_s // max(1, interval_s)) + 1)
+        last = CostResult(ok=False, error="cost_pending", message="no fetch attempted")
+        for i in range(attempts):
+            last = self.fetch_call_cost(call_id=call_id)
+            if last.ok:
+                return last
+            # Only a not-yet-final cost is worth waiting on; a real error is terminal.
+            if last.error not in ("cost_pending", "cost_unavailable"):
+                return last
+            if i < attempts - 1:
+                sleep(interval_s)
+        return last
 
     def fetch_call(self, *, call_id: str) -> dict[str, Any]:
         """Return the full Vapi call object for *call_id* (live, read-only).
@@ -457,7 +529,7 @@ class VapiVoiceProvider:
 
 
 # ===========================================================================
-# Lazy singleton — the live httpx client is built on first call ONLY (ENV4)
+# Lazy singleton — the live httpx client is built on first call ONLY
 # ===========================================================================
 
 _vapi: Any | None = None
@@ -468,7 +540,7 @@ def _get_vapi() -> Any:
 
     NOT constructed at import — the module-level `_vapi` is None until the first
     live caller (place_call / fetch_call_cost). The default offline suite uses
-    FakeVoiceProvider and never reaches this function (ENV4 / VOICE4 / CON4).
+    FakeVoiceProvider and never reaches this function.
     Reads VAPI_API_KEY via config only here; httpx is imported lazily so importing
     this module pulls no HTTP client into the import graph.
     """

@@ -1,13 +1,10 @@
-"""Alta Outbound Voice Agent — app.eval package (offline evaluation substrate).
+"""Offline-eval package — the shared vocabulary for transcript scoring.
 
-Single responsibility: package marker + the shared, import-safe vocabulary every
-offline-eval module agrees on — the conversation `Turn`, the `Persona` enum, and
-the `Disposition` enum. Defining these here (not in a concrete module) keeps the
-simulated callee, the rubric, and the persona policy from re-declaring the shape
-of a transcript.
+Defines the small types every eval module agrees on (the conversation Turn and the
+Speaker/Stage/Persona/Disposition enums) in one place, so the simulator, the rubric,
+and the dialog policy never re-declare the shape of a transcript.
 
-Import-safety (ENV4): this module defines only constants/enums/dataclasses — no
-network, no .env read, no data/* read, no client. Importing it is side-effect free.
+Import-safe: defines only enums and dataclasses — no side effects.
 """
 
 from __future__ import annotations

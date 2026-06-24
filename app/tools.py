@@ -1,27 +1,22 @@
-"""Alta Outbound Voice Agent — app/tools.py
+"""Agent tools — the deterministic functions the model calls during a call.
 
-Single responsibility: the agent's 5 deterministic callable functions (the tools
-the Realtime model invokes during a call) + a dispatch registry whose keys are
-asserted == AGENT_TOOLS at import (CLAUDE.md §9, TOOL5).
+Four callable tools, each returning structured data and never raising across its
+boundary (a busy slot, a backend error, or bad input all come back as a structured
+result):
+  - check_availability : free slots in the lookahead window, each rendered in the
+                         lead's local timezone.
+  - book_meeting       : idempotent booking — a conflict offers another slot rather
+                         than double-booking or confirming a phantom meeting.
+  - log_disposition    : the structured outcome; the phone number is always masked.
+  - detect_voicemail   : classify a greeting and decide whether to leave a message.
 
-The 5 tools (name == AGENT_TOOLS entry == schema name == dispatch key):
-  - check_availability : free slots in the lookahead window, with the lead's tz
-                         resolved against the sales-calendar tz (TOOL1/BOOK1).
-  - book_meeting       : idempotent booking; conflict → "offer another" (TOOL2/BOOK3).
-  - log_disposition    : a structured disposition; NO secret, NO full phone number
-                         (masked via consent.mask_phone — TOOL3/LEAK2).
-  - detect_voicemail   : classify a voicemail-greeting transcript; leave ≤
-                         VOICEMAIL_MAX_S then end (TOOL4).
-  - end_call           : clean hangup (TOOL5).
+A dispatch registry routes a tool name to its function and injects the runtime
+infrastructure the model must not supply itself — the calendar backend, the clock,
+and the authoritative lead id/timezone. Also hosts `qualify`, an internal helper the
+offline rubric uses to check the pitch was tailored to the prospect's stated need.
 
-Resiliency (§6): every tool returns STRUCTURED data and never raises across its
-boundary for an expected condition (a busy slot, a backend error, a bad input).
-Bad input is reported as a structured error result, not an exception.
-
-Import-safety (ENV4): importing this module builds no client, reads no .env, no
-data/*, no network. The calendar backend is INJECTED (the offline default is a
-MockCalendar passed by the caller); the live Cal.com client is only ever reached
-through calendar_client._get_calendar(), never at import.
+Import-safe: no client, .env, data, or network access at import; the calendar
+backend is injected (a mock offline, the live client only on demand).
 """
 
 from __future__ import annotations
@@ -111,15 +106,14 @@ class ToolResult:
 
 
 # ===========================================================================
-# Timezone resolution (TOOL1/BOOK1 — Finding 6)
+# Timezone resolution
 # ===========================================================================
 
 def _resolve_zone(tz_name: str | None) -> ZoneInfo | timezone:
     """Resolve an IANA tz name to a tzinfo; fall back to the calendar tz.
 
-    A missing/unknown tz never crashes the call — it degrades to the sales
-    calendar tz (a safe, explicit default), so a bad lead record can't take the
-    booking path down (§6).
+    A missing or unknown tz never crashes the call — it degrades to the sales-calendar
+    tz (a safe, explicit default), so a bad lead record can't take the booking path down.
     """
     if not tz_name:
         return SALES_CALENDAR_TZ
@@ -130,14 +124,11 @@ def _resolve_zone(tz_name: str | None) -> ZoneInfo | timezone:
 
 
 def _format_say(lead_start: datetime) -> str:
-    """A ready-to-speak slot label, the BARE time in the lead's local tz (D2 fix).
+    """A ready-to-speak slot label — the bare time in the lead's local timezone.
 
-    The agent voices this string VERBATIM so it can't pick the UTC field or compute a
-    time itself. No "your time" / tz suffix: the agent repeated it on every slot and it
-    was verbose (Asaf note 2026-06-24, "we don't need that"). The time is still computed
-    in the lead's resolved timezone — it is just stated plainly.
-    OS-agnostic formatting (no platform-specific %- directives).
-    Example: "Tuesday, June 30 at 4:45 PM".
+    The agent voices this string verbatim, so it never has to pick a UTC field or
+    compute a time itself. Formatting avoids platform-specific directives so it works
+    on any OS. Example: "Tuesday, June 30 at 4:45 PM".
     """
     hour12 = lead_start.hour % 12 or 12
     ampm = "AM" if lead_start.hour < 12 else "PM"
@@ -148,12 +139,11 @@ def _format_say(lead_start: datetime) -> str:
 
 
 def _slot_to_payload(slot: Slot, lead_zone: ZoneInfo | timezone) -> dict[str, Any]:
-    """Render a slot for the agent: the calendar-tz time, the lead-local time, AND a
-    ready-to-speak `say` string in the lead's local time.
+    """Render a slot for the agent: the authoritative calendar-tz time, the lead's
+    local time, and a ready-to-speak `say` string in the lead's local time.
 
-    The `say` field is what the agent voices; the calendar-tz value is the
-    authoritative booking time. Carrying both + a pre-formatted string is the
-    explicit tz resolution the grader checks (no "3pm in the wrong tz", D2).
+    The `say` field is what the agent reads aloud; the calendar-tz value is the time
+    the meeting is actually booked at — carrying both prevents "3pm in the wrong tz".
     """
     cal_start = slot.start.astimezone(SALES_CALENDAR_TZ)
     lead_start = slot.start.astimezone(lead_zone)
@@ -182,13 +172,11 @@ def check_availability(
 ) -> ToolResult:
     """Return up to *max_slots* free slots within the lookahead window, tz-resolved.
 
-    Deterministic under the mock (the `now` clock is injected). Resolves the
-    lead's timezone against SALES_CALENDAR_TZ so each slot is voiced in the
-    lead's local time while booked at the authoritative calendar time (TOOL1).
-    The result is CAPPED to a small spread of options (live calendars return
-    hundreds of slots, which overflows the voice platform's tool-result and makes
-    a poor "pick a time" UX). Any backend failure surfaces as a structured error,
-    never a crash (§6).
+    Deterministic under the mock (the clock is injected). Each slot is voiced in the
+    lead's local time while booked at the authoritative calendar time. The result is
+    capped to a small spread of options — a live calendar can return hundreds of slots,
+    which both overflows the platform's tool-result and makes a poor "pick a time"
+    experience. Any backend failure surfaces as a structured error, never a crash.
     """
     try:
         lead_zone = _resolve_zone(lead_timezone)
@@ -230,11 +218,10 @@ def book_meeting(
 ) -> ToolResult:
     """Book *slot_start_iso* for *lead_id* — idempotent, no double-book, no phantom.
 
-    A repeat call for the same lead + slot returns the SAME event id (TOOL2). A
-    slot taken by another lead (or busy) returns ok=False / error="slot_taken"
-    so the agent OFFERS ANOTHER slot — never a silent overwrite and never a voiced
-    confirmation without a created event (BOOK3 / Policy 5). A bad start string is
-    a structured invalid_input, not a crash.
+    A repeat call for the same lead and slot returns the same event id. A slot taken
+    by another lead (or already busy) returns ok=False / "slot_taken" so the agent
+    offers another time — never a silent overwrite, and never a spoken confirmation
+    without a real event. A bad start string is a structured invalid_input, not a crash.
     """
     if not lead_id:
         return ToolResult(ok=False, error="invalid_input", message="lead_id is required")
@@ -268,7 +255,7 @@ def book_meeting(
 
 
 # ===========================================================================
-# Tool 3 — log_disposition  (NO secret, NO full phone number — TOOL3/LEAK2)
+# Tool 3 — log_disposition  (the phone number is always masked)
 # ===========================================================================
 
 def log_disposition(
@@ -281,10 +268,9 @@ def log_disposition(
 ) -> ToolResult:
     """Record a structured disposition; the phone number is ALWAYS masked.
 
-    The record carries ONLY: lead_id, a validated disposition, a MASKED phone
-    (last 2 digits via consent.mask_phone), an optional event_id, and short
-    notes. A full phone number or a secret never enters the record (TOOL3/LEAK2).
-    An unknown disposition is rejected as structured invalid_input.
+    The record carries only: lead_id, a validated disposition, a masked phone (last
+    two digits), an optional event_id, and short notes — never a full number or a
+    secret. An unknown disposition is rejected as structured invalid_input.
     """
     if disposition not in VALID_DISPOSITIONS:
         return ToolResult(
@@ -309,7 +295,7 @@ def log_disposition(
 
 
 # ===========================================================================
-# Tool 4 — detect_voicemail  (TOOL4)
+# Tool 4 — detect_voicemail
 # ===========================================================================
 
 def detect_voicemail(
@@ -320,8 +306,8 @@ def detect_voicemail(
     """Classify whether *transcript* is a voicemail greeting (deterministic).
 
     On detection, the result tells the caller to leave a message no longer than
-    VOICEMAIL_MAX_S then end (TOOL4). Pure substring matching over generic
-    carrier/greeting cues — no network, no model, fully deterministic.
+    VOICEMAIL_MAX_S, then end. Pure substring matching over generic carrier/greeting
+    cues — no network, no model.
     """
     text = (transcript or "").lower()
     matched = [cue for cue in _VOICEMAIL_CUES if cue in text]
@@ -343,17 +329,17 @@ def detect_voicemail(
 
 
 # ===========================================================================
-# Internal helper — qualify  (Bug 2 tailoring oracle; NOT a dispatched live tool)
+# Internal helper — qualify  (the offline tailoring oracle; not a live tool)
 # ===========================================================================
-# Routes a discovery answer → the grounded value-prop to emphasize. Kept as a pure,
-# deterministic function so rubric.pitch_tailored can use it as the offline tailoring
-# oracle; the LIVE agent does the same tailoring inline via the system prompt (no tool
-# round-trip — Asaf decision 2026-06-24 after a ~2.5s live latency hit).
+# Routes a discovery answer to the grounded value-prop to emphasize. Kept as a pure,
+# deterministic function so the rubric can use it as a tailoring oracle; the live agent
+# does the same tailoring inline via the system prompt (a mid-call tool round-trip added
+# noticeable latency, so it is not dispatched live).
 
-# Pain-theme → trigger keywords found in a PROSPECT'S ANSWER. This is classification
-# logic, NOT Alta business content — the assertable value-prop TEXT still comes ONLY
-# from value_prop.md (LEAK3). Each theme's anchor words also appear in the value-prop
-# it routes to, so _select_value_prop picks the grounded match from the file.
+# Pain-theme → trigger keywords found in a prospect's answer. This is classification
+# logic, not Alta business content — the assertable value-prop text still comes only
+# from the value-prop file. Each theme's anchor words also appear in the value-prop it
+# routes to, so the selector picks the grounded match from the file.
 _QUALIFY_THEMES: dict[str, tuple[str, ...]] = {
     "scale": (
         "scale", "scaling", "volume", "manual", "manually", "by hand", "hundreds",
@@ -405,7 +391,7 @@ def _qualify_select_value_prop(
 
 
 def _load_value_props_for_qualify() -> tuple[str, ...]:
-    """Lazily parse the value-prop file's items (LEAK3; never read at import)."""
+    """Lazily parse the value-prop file's items (never read at import)."""
     from app.persona import load_value_prop  # lazy: no cycle, no import-time file read
     return load_value_prop().value_props
 
@@ -417,15 +403,14 @@ def qualify(
 ) -> ToolResult:
     """Route a prospect's discovery answer to the grounded value-prop to emphasize.
 
-    Turns "tailor the pitch to what they say" into an explicit, deterministic,
-    logged decision (Bug 2 — CTO review 2026-06-24). Returns the matched pain
-    theme(s), the single value-prop to lead with (ALWAYS one of the value-prop
-    file's items — never invented here, LEAK3), and whether the answer was too vague or
-    empty to route — so the agent asks ONE clarifying question instead of pitching
-    a canned script on a non-answer.
+    Turns "tailor the pitch to what they say" into an explicit, deterministic decision.
+    Returns the matched pain theme(s), the single value-prop to lead with (always one of
+    the value-prop file's items, never invented here), and whether the answer was too
+    vague or empty to route — so the agent asks one clarifying question instead of
+    pitching a canned script on a non-answer.
 
-    Called by rubric.pitch_tailored with the prospect's answer; the value-prop content
-    is loaded from the file at runtime (or injected for tests). Never raises (§6).
+    Used by the offline rubric with the prospect's answer; the value-prop content is
+    loaded from the file at runtime (or injected for tests). Never raises.
     """
     a = (answer or "").strip()
     if not a:
@@ -504,11 +489,11 @@ TOOL_REGISTRY: dict[str, Callable[..., ToolResult]] = {
     "log_disposition": log_disposition,
     "detect_voicemail": detect_voicemail,
 }
-# Deliberately absent (retired 2026-06-24): `end_call` (Vapi NATIVE end-call replaces
-# the custom no-op) and `qualify` (internal tailoring oracle for rubric.pitch_tailored,
-# not a dispatched live tool — tailoring is done inline by the system prompt).
+# Deliberately absent (retired): `end_call` (the platform's native end-call replaces
+# the custom no-op) and `qualify` (the offline tailoring oracle, not a dispatched live
+# tool — tailoring is done inline by the system prompt).
 
-# Import-time identity guard: name == AGENT_TOOLS entry == dispatch key (TOOL5).
+# Import-time identity guard: name == AGENT_TOOLS entry == dispatch key.
 # A rename/typo fails fast at import, not at runtime mid-call.
 assert set(TOOL_REGISTRY.keys()) == set(AGENT_TOOLS), (
     "TOOL_REGISTRY keys must equal AGENT_TOOLS exactly. "
@@ -521,14 +506,14 @@ assert all(callable(fn) for fn in TOOL_REGISTRY.values()), (
 
 
 # Tools that need a calendar backend (and a clock) INJECTED at runtime. Over the
-# webhook the Realtime model supplies only business arguments (lead_id, slot,
-# timezone); the calendar and the clock are infrastructure the runtime must inject
-# — the model neither can nor should. Without this injection every booking webhook
-# returned `invalid_input` ("missing keyword-only argument 'calendar'") and NO
-# meeting could ever be booked over the wire, defeating the core deliverable.
+# webhook the model supplies only business arguments (lead_id, slot, timezone); the
+# calendar and the clock are infrastructure the runtime must inject — the model
+# neither can nor should. Without this injection every booking webhook failed with
+# "missing keyword-only argument 'calendar'" and no meeting could be booked over the
+# wire, defeating the core deliverable.
 _CALENDAR_TOOLS = frozenset({"check_availability", "book_meeting"})
 # Tools whose lead_id is INFRASTRUCTURE, injected authoritatively by the runtime —
-# never trusted from the model (D3 fix: the model fabricated "lead_id_placeholder").
+# never trusted from the model (which once fabricated "lead_id_placeholder").
 _LEAD_ID_TOOLS = frozenset({"book_meeting", "log_disposition"})
 
 
@@ -544,15 +529,13 @@ def dispatch(
 ) -> ToolResult:
     """Route a tool-call by name to its function (the single dispatch point).
 
-    This is the one runtime tool-invocation chokepoint the webhook (and the future
-    campaign runner) call. The model passes only business args; for the booking
-    tools (`check_availability` / `book_meeting`) the calendar backend — and, for
-    `check_availability`, the clock — are INJECTED here: an explicit *calendar* (the
-    offline suite injects a MockCalendar) or, when none is given, the lazy live
-    Cal.com client via `_get_calendar()`. A missing live key (or any build failure)
-    surfaces as a structured `calendar_unavailable`, never a crash (§6). An unknown
-    tool name or bad/missing args likewise return a structured error — never a
-    KeyError/TypeError crash.
+    This is the one runtime tool-invocation chokepoint the webhook (and the campaign
+    runner) call. The model passes only business args; for the booking tools the
+    calendar backend — and, for check_availability, the clock — are injected here:
+    an explicit *calendar* (the offline suite injects a MockCalendar) or, when none is
+    given, the lazy live Cal.com client. A missing live key or any build failure
+    surfaces as a structured `calendar_unavailable`, never a crash. An unknown tool
+    name or bad/missing args likewise return a structured error, never a crash.
     """
     fn = TOOL_REGISTRY.get(name)
     if fn is None:
@@ -574,18 +557,18 @@ def dispatch(
         if calendar is None:
             try:
                 calendar = _get_calendar()  # lazy live client; never built at import
-            except Exception as exc:  # noqa: BLE001 — missing key/build → data (§6)
+            except Exception as exc:  # noqa: BLE001 — missing key/build → data
                 return ToolResult(ok=False, error="calendar_unavailable",
                                   message=str(exc))
         kwargs["calendar"] = calendar
         if name == "check_availability":
             kwargs["now"] = now if now is not None else datetime.now(SALES_CALENDAR_TZ)
-            # Authoritative lead timezone overrides any model-supplied value (D2).
+            # Authoritative lead timezone overrides any model-supplied value.
             if lead_timezone is not None:
                 kwargs["lead_timezone"] = lead_timezone
 
-    # Authoritative lead_id overrides any model-supplied value (D3) — the model
-    # never decides which lead a booking/disposition is written under.
+    # Authoritative lead_id overrides any model-supplied value — the model never
+    # decides which lead a booking/disposition is written under.
     if name in _LEAD_ID_TOOLS and lead_id is not None:
         kwargs["lead_id"] = lead_id
 

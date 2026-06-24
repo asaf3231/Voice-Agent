@@ -1,22 +1,14 @@
-"""Alta Outbound Voice Agent — app/consent.py
+"""Consent gate — the single chokepoint that decides if a number may be dialed.
 
-Single responsibility: the consent-allowlist gate — the SINGLE chokepoint that
-controls whether a number may be dialed (CLAUDE.md §5 Policy 2, CON1).
+A number is dialable only if it is on the consent allowlist and not flagged
+do-not-call; everything else is refused before it can reach the voice provider. The
+allowlist is validated on load — a malformed or empty list raises a clean error
+rather than silently allowing none. Also provides phone-number masking (all but the
+last two digits) so numbers never appear in full in logs.
 
-Rules enforced here:
-  - consent_allows(number) → True only for numbers on the loaded allowlist.
-  - A non-allowlisted number is REFUSED; it never reaches place_call.
-  - do_not_call=True suppresses a lead regardless of allowlist status (CON5).
-  - The allowlist source validates on load: a malformed/empty allowlist is a
-    clean explicit error, NOT silent allow-none (CON1 / Red-Team 2026-06-23).
-  - mask_phone() masks all but the last 2 digits for safe logging (LEAK2/SEC1).
+Allowlist format — a JSON file: {"allowed_numbers": ["+15551234567", ...]}.
 
-Import-safety (ENV4): no I/O, no file read, no .env read at import.
-The allowlist is loaded lazily (load_allowlist()) only when called.
-
-Allowlist format — JSON file:
-  {"allowed_numbers": ["+15551234567", "+15559876543"]}
-  Required key: "allowed_numbers" (list of E.164 strings, non-empty).
+Import-safe: the allowlist is loaded lazily on first use, never at import.
 """
 
 from __future__ import annotations
@@ -60,7 +52,7 @@ def mask_phone(number: str) -> str:
 class AllowlistError(ValueError):
     """Raised when the allowlist cannot be loaded or is invalid.
 
-    This is a clean explicit error (CON1) — never silently allow-none.
+    This is a clean explicit error — never a silent "allow none".
     """
 
 
@@ -173,12 +165,12 @@ def consent_allows(
 ) -> bool:
     """Return True only if *number* is on the allowlist AND not flagged do_not_call.
 
-    This is the SINGLE chokepoint before place_call (CON1/CLAUDE.md §5 Policy 2).
-    No number reaches the voice provider without passing here.
+    This is the single chokepoint before any call is placed: no number reaches the
+    voice provider without passing here.
 
     Args:
         number:        The E.164 phone number to check.
-        do_not_call:   If True, suppresses the lead regardless of allowlist status (CON5).
+        do_not_call:   If True, suppresses the lead regardless of allowlist status.
         allowlist:     If provided, use this set instead of the singleton (for tests).
 
     Returns:

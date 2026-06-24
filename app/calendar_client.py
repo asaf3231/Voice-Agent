@@ -1,24 +1,14 @@
-"""Alta Outbound Voice Agent — app/calendar_client.py
+"""Calendar backend — booking behind one swappable interface.
 
-Single responsibility: the booking layer behind ONE seam — the `CalendarProvider`
-interface (CLAUDE.md §9). Two implementations live here:
+Defines the CalendarProvider interface (list_slots / create_event) with two
+implementations: an in-memory MockCalendar (the deterministic offline default) and
+CalComCalendar (the live Cal.com client). Both are idempotent — booking the same
+lead and slot twice returns the same event and never double-books — and both return
+structured results instead of raising, so a busy slot or a backend error is data,
+not a crash.
 
-  - `MockCalendar`  — the deterministic, in-memory, OFFLINE test default. Controllable
-    free/busy slots; `create_event` returns a real-looking event id; idempotent (the
-    same lead + slot ⇒ the same event, never a double-book); a busy slot ⇒ a structured
-    "slot taken", never a silent overwrite (BOOK1–BOOK3 / Policy 5).
-  - `CalComCalendar` — the LIVE Cal.com HTTP client (httpx). Built ONLY via the lazy
-    `_get_calendar()`; import-safe (no client/secret/network at import). It reads
-    CALCOM_API_KEY / CALCOM_EVENT_TYPE_ID via config only when CALLED. It is NEVER
-    constructed at import nor exercised in the default suite (ENV4 / CON4).
-
-The graded interface signature methods are EXACTLY `list_slots(...)` and
-`create_event(...)` — do not rename or change them (CLAUDE.md §9).
-
-Import-safety (ENV4): importing this module defines only constants, dataclasses,
-classes, and functions. No client, no network, no .env read, no data read. The
-module-level Cal.com singleton (`_calendar`) is None at import and only the lazy
-`_get_calendar()` constructs it.
+Import-safe: the live client is built lazily on first use; the offline suite uses
+the mock directly and never touches the network.
 """
 
 from __future__ import annotations
@@ -38,14 +28,14 @@ from app.config import (
 logger = logging.getLogger(__name__)
 
 # The sales calendar's authoritative timezone. Bookings are stored/compared in
-# this zone; the lead's local tz is resolved against it (TOOL1/BOOK1, Finding 6).
+# this zone; the lead's local tz is resolved against it.
 # UTC is the only safe, OS-agnostic default that the offline suite can rely on
 # without a tz database surprise; the live Cal.com event type carries its own tz.
 SALES_CALENDAR_TZ = timezone.utc
 
 
 # ===========================================================================
-# Value types (structured data — never raw exceptions across the seam, §6)
+# Value types (structured data — never raw exceptions across the seam)
 # ===========================================================================
 
 @dataclass(frozen=True)
@@ -66,7 +56,7 @@ class Slot:
 
 @dataclass(frozen=True)
 class BookingResult:
-    """The structured outcome of a create_event attempt (never an exception, §6).
+    """The structured outcome of a create_event attempt (never an exception).
 
     ok=True  → event_id is the created/idempotent event's id.
     ok=False → reason is one of: "slot_taken", "calendar_error", "invalid_slot".
@@ -85,7 +75,7 @@ class BookingResult:
 
 @runtime_checkable
 class CalendarProvider(Protocol):
-    """The booking seam (CLAUDE.md §9). EXACTLY these two graded methods.
+    """The booking seam. Exactly these two methods.
 
     An implementation must be deterministic given its own inputs and must never
     raise across this boundary for an expected failure (a busy slot, a backend
@@ -142,7 +132,7 @@ class MockCalendar:
     """
 
     # Business-hours bounds in the calendar tz (kept local to the mock — these
-    # are mock-shaping knobs, NOT governance constants, so they don't belong in §9).
+    # are mock-shaping knobs, not governance constants, so they live here, not in config.
     BUSINESS_START_HOUR: int = 9
     BUSINESS_END_HOUR: int = 17  # exclusive (last slot starts before this hour)
 
@@ -234,7 +224,7 @@ class CalComCalendar:
     Constructed ONLY by the lazy `_get_calendar()` (never at import). It reads
     CALCOM_API_KEY / CALCOM_EVENT_TYPE_ID via config when instantiated, and
     builds the httpx client lazily on first request. It is gated exactly like the
-    other live paths and is never used in the default offline suite (CON4).
+    other live paths and is never used in the default offline suite.
     """
 
     BASE_URL = "https://api.cal.com/v2"
@@ -251,11 +241,11 @@ class CalComCalendar:
         self._api_key = require_setting("CALCOM_API_KEY")
         self._event_type_id = require_setting("CALCOM_EVENT_TYPE_ID")
         self._client = None  # httpx client built lazily on first request
-        # Idempotency guard (CalendarProvider contract / Policy 5): lead_id|slot_key
+        # Idempotency guard (the CalendarProvider contract): lead_id|slot_key
         # -> event_id for bookings already created by THIS client. A retry / webhook
         # redelivery for the same lead+slot returns the same id without POSTing again
         # (the live API POSTs unconditionally, so without this a double-call would
-        # double-book — Finding #2).
+        # double-book).
         self._booked: dict[str, str] = {}
 
     def _get_client(self):
@@ -300,7 +290,7 @@ class CalComCalendar:
                 logger.warning("Cal.com /slots %s: %s", resp.status_code, resp.text[:300])
                 return []
             return _parse_calcom_slots(resp.json(), slot_minutes=slot_minutes)
-        except Exception as exc:  # noqa: BLE001 — a live failure is data, not a crash (§6)
+        except Exception as exc:  # noqa: BLE001 — a live failure is data, not a crash
             logger.warning("Cal.com /slots request failed: %s", exc)
             return []
 
@@ -313,7 +303,7 @@ class CalComCalendar:
     ) -> BookingResult:
         """Create a Cal.com v2 booking (live), idempotently. Any failure → structured.
 
-        Idempotency (Finding #2 / contract / Policy 5): a repeat call for the same
+        Idempotency: a repeat call for the same
         lead_id + slot returns the SAME event id and does NOT POST again, so a retry
         or webhook redelivery cannot double-book.
 
@@ -358,7 +348,7 @@ class CalComCalendar:
                                      detail="Cal.com returned no booking id")
             self._booked[event_key] = event_id  # remember for idempotency
             return BookingResult(ok=True, event_id=event_id)
-        except Exception as exc:  # noqa: BLE001 — surface as data (§6)
+        except Exception as exc:  # noqa: BLE001 — surface as data
             return BookingResult(ok=False, reason="calendar_error", detail=str(exc))
 
 
@@ -385,7 +375,7 @@ def _parse_calcom_slots(payload: dict, *, slot_minutes: int) -> list[Slot]:
 
 
 # ===========================================================================
-# Lazy singleton — the live client is built on first call ONLY (ENV4)
+# Lazy singleton — the live client is built on first call ONLY
 # ===========================================================================
 
 _calendar: CalendarProvider | None = None
@@ -396,7 +386,7 @@ def _get_calendar() -> CalendarProvider:
 
     NOT constructed at import — the module-level `_calendar` is None until the
     first live caller. The default offline suite uses MockCalendar directly and
-    never reaches this function (CON4 / ENV4). Reads secrets via config only here.
+    never reaches this function. Reads secrets via config only here.
     """
     global _calendar
     if _calendar is None:

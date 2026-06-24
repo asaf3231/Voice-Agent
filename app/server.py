@@ -1,25 +1,14 @@
-"""Alta Outbound Voice Agent — app/server.py
+"""Webhook server — the FastAPI app the voice platform calls during a call.
 
-Single responsibility: the secret-verified FastAPI webhook server the voice
-platform calls for tool/function invocations and call-status events. It is the
-inbound counterpart to the VoiceProvider adapter (which owns OUTBOUND calls).
+The inbound counterpart to the voice adapter (which owns outbound calls). It handles
+two webhooks: tool/function invocations (routed to app.tools) and call-status
+events. Every request is authenticated against a shared secret with a constant-time
+compare and rejected with 401 if it fails; handlers are exception-safe and always
+return structured JSON rather than a 500. The authoritative lead id/timezone are
+injected here, so a value the model might hallucinate can never reach a tool.
 
-What it enforces:
-  - Webhook authenticity (VOICE2): every inbound webhook is authenticated against
-    VAPI_WEBHOOK_SECRET — Vapi sends the configured server secret verbatim in the
-    `x-vapi-secret` header; we constant-time compare it to our secret. A bad/missing
-    secret → HTTP 401, never processed. A valid one → processed.
-  - Tool dispatch (VOICE3): a verified tool-call webhook routes to
-    app.tools.dispatch(name, **args) with validated args; an unknown tool → a
-    structured error (no crash). A call-status webhook records a lifecycle event.
-  - Resiliency (§6): handlers are exception-safe end to end — a component failure
-    is a structured JSON response, never a 500 traceback.
-
-Import-safety (ENV4): `app = FastAPI(...)` at module level is a pure object
-construction (no side effects). Importing this module reads NO .env, builds NO
-client, opens NO lifespan resource, and places NO call. The webhook secret is read
-lazily (per request) via config.get_setting; the .env is loaded only at the
-runtime entry point (`make serve` → uvicorn lifespan startup), never at import.
+Import-safe: constructing the app has no side effects; the secret is read per
+request and the .env only at startup, never at import.
 """
 
 from __future__ import annotations
@@ -46,11 +35,11 @@ SIGNATURE_HEADER = "x-vapi-secret"
 
 
 # ===========================================================================
-# Webhook authentication (VOICE2) — isolated + swappable
+# Webhook authentication — isolated + swappable
 # ===========================================================================
 
 def verify_secret(secret: str | None, provided: str | None) -> bool:
-    """Return True iff the inbound webhook secret matches our shared secret (VOICE2).
+    """Return True iff the inbound webhook secret matches our shared secret.
 
     Vapi sends the configured server secret verbatim in the `x-vapi-secret` header;
     we compare it to VAPI_WEBHOOK_SECRET with a constant-time comparison
@@ -64,18 +53,18 @@ def verify_secret(secret: str | None, provided: str | None) -> bool:
 
 
 # ===========================================================================
-# The FastAPI app (module-level construction is side-effect free — ENV4)
+# The FastAPI app (module-level construction is side-effect free)
 # ===========================================================================
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):  # pragma: no cover — runtime entry, not the suite
-    """Load the local .env at SERVER STARTUP only (never at import — ENV4).
+    """Load the local .env at SERVER STARTUP only (never at import).
 
     This is the sanctioned runtime entry point for `load_env` (config docstring):
     `make serve` boots uvicorn, which enters this lifespan so get_setting()
     observes the developer's local secrets. Importing the module does NOT run this
     (constructing FastAPI(lifespan=...) only stores the callable; it is awaited at
-    startup), so import-safety holds (ENV4).
+    startup), so import-safety holds.
     """
     load_env()
     yield
@@ -98,7 +87,7 @@ async def _verified_body(request: Request) -> tuple[bool, bytes, dict[str, Any]]
     """Read the raw body, verify the x-vapi-secret header, and parse JSON.
 
     Returns (ok, raw_body, payload). When ok is False the caller returns 401
-    WITHOUT processing the payload (VOICE2). The secret is read lazily per request
+    WITHOUT processing the payload. The secret is read lazily per request
     via config.get_setting — never at import.
     """
     raw_body = await request.body()
@@ -116,12 +105,12 @@ async def _verified_body(request: Request) -> tuple[bool, bytes, dict[str, Any]]
 
 
 def _unauthorized() -> JSONResponse:
-    """The single 401 response for an unverified webhook (VOICE2)."""
+    """The single 401 response for an unverified webhook."""
     return JSONResponse(status_code=401, content={"ok": False, "error": "unauthorized"})
 
 
 # ===========================================================================
-# Tool-call webhook (VOICE3) — routes to app.tools.dispatch
+# Tool-call webhook — routes to app.tools.dispatch
 # ===========================================================================
 
 def _extract_tool_call(
@@ -183,7 +172,7 @@ def _payload_metadata(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def extract_lead_context(payload: dict[str, Any]) -> tuple[str, str | None]:
-    """Return the AUTHORITATIVE (lead_id, lead_timezone) for this tool call (D2/D3).
+    """Return the AUTHORITATIVE (lead_id, lead_timezone) for this tool call.
 
     Prefers the assistant metadata Vapi echoes in the payload (scalable path); fills
     any gap from the env-backed get_lead_context() so the demo works even without the
@@ -198,14 +187,14 @@ def extract_lead_context(payload: dict[str, Any]) -> tuple[str, str | None]:
 
 
 def _tool_results(tool_call_id: str | None, payload: dict[str, Any]) -> JSONResponse:
-    """Wrap a tool's structured payload in **Vapi's tool-result envelope** (VOICE3).
+    """Wrap a tool's structured payload in **Vapi's tool-result envelope**.
 
     Vapi requires a custom-tool webhook to answer with
     `{"results": [{"toolCallId": <id>, "result": <string>}]}` — the model receives
     `result` as the tool's output. We JSON-encode our structured payload so the
     model can use it (e.g. read the free slots from check_availability, then call
     book_meeting). Returning the wrong shape makes Vapi report "No result returned"
-    and the agent can never book (reconciled against the live Vapi contract 2026-06-24).
+    and the agent can never book.
     """
     return JSONResponse(
         status_code=200,
@@ -215,13 +204,13 @@ def _tool_results(tool_call_id: str | None, payload: dict[str, Any]) -> JSONResp
 
 @app.post("/webhook/tool")
 async def tool_webhook(request: Request) -> JSONResponse:
-    """Handle a secret-verified tool-call webhook (VOICE2 + VOICE3).
+    """Handle a secret-verified tool-call webhook.
 
     A bad/missing secret → 401 (never processed). A verified call routes to
     app.tools.dispatch(name, **args) and the structured result is returned in
     Vapi's tool-result envelope (`_tool_results`). An unknown tool, bad args, or
     handler error is still returned as a structured result string (dispatch never
-    raises across its boundary — §6), never a 500.
+    raises across its boundary), never a 500.
     """
     ok, _raw, payload = await _verified_body(request)
     if not ok:
@@ -234,19 +223,19 @@ async def tool_webhook(request: Request) -> JSONResponse:
             return _tool_results(tool_call_id, {"ok": False, "error": "no_tool_call",
                                                 "message": "webhook carried no tool call"})
         # Inject AUTHORITATIVE lead context; strip any model-supplied lead_id/timezone
-        # so a hallucinated placeholder or invented tz can never reach a tool (D2/D3).
+        # so a hallucinated placeholder or invented tz can never reach a tool.
         lead_id, lead_timezone = extract_lead_context(payload)
         args.pop("lead_id", None)
         args.pop("lead_timezone", None)
         result = dispatch(name, lead_id=lead_id, lead_timezone=lead_timezone, **args)
         return _tool_results(tool_call_id, result.to_dict())
-    except Exception as exc:  # noqa: BLE001 — never leak a 500 traceback (§6)
+    except Exception as exc:  # noqa: BLE001 — never leak a 500 traceback
         return _tool_results(tool_call_id, {"ok": False, "error": "handler_error",
                                             "message": str(exc)})
 
 
 # ===========================================================================
-# Call-status webhook — records lifecycle events (resilient, §6)
+# Call-status webhook — records lifecycle events (resilient)
 # ===========================================================================
 
 @app.post("/webhook/status")
@@ -254,8 +243,8 @@ async def status_webhook(request: Request) -> JSONResponse:
     """Handle a secret-verified call-status (lifecycle) webhook.
 
     Records the lifecycle event and acknowledges. Any phone number in the payload
-    is masked before it is echoed (LEAK2/SEC1 — a log line never carries a full
-    real number). Exception-safe end to end (§6).
+    is masked before it is echoed (a log line never carries a full
+    real number). Exception-safe end to end.
     """
     ok, _raw, payload = await _verified_body(request)
     if not ok:
@@ -276,7 +265,7 @@ async def status_webhook(request: Request) -> JSONResponse:
         if number:
             ack["phone_masked"] = mask_phone(number)
         return JSONResponse(status_code=200, content=ack)
-    except Exception as exc:  # noqa: BLE001 — never leak a 500 traceback (§6)
+    except Exception as exc:  # noqa: BLE001 — never leak a 500 traceback
         return JSONResponse(
             status_code=200,
             content={"ok": False, "error": "handler_error", "message": str(exc)},
