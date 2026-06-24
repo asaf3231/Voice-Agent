@@ -73,8 +73,15 @@ BOOKING_SLOT_MINUTES: int = 30
 BOOKING_LOOKAHEAD_DAYS: int = 10
 
 # --- providers / models / determinism ---
-REALTIME_MODEL: str = "gpt-realtime-2025-08-28"  # OQ-VOICE-1; reconciled to Vapi's accepted realtime id (ENV2, 2026-06-24, Asaf)
-VOICE_PROVIDER: str = "vapi"                      # managed; Retell-swappable
+# OQ-VOICE-1 REVISED 2026-06-24 (Asaf): moved OFF OpenAI realtime speech-to-speech
+# (it fragmented/paused over telephony) to Vapi's standard pipeline — a chat LLM +
+# a dedicated TTS voice + a transcriber — which is robust for phone audio.
+LLM_MODEL: str = "gpt-4o"                         # conversational model (Vapi 'model.model')
+TTS_PROVIDER: str = "openai"                      # TTS uses the existing OpenAI key (no extra provider key)
+TTS_VOICE_ID: str = "shimmer"                     # OpenAI TTS voice (alloy/echo/fable/onyx/nova/shimmer)
+TRANSCRIBER_PROVIDER: str = "deepgram"            # Vapi default STT
+TRANSCRIBER_MODEL: str = "nova-2"
+VOICE_PROVIDER: str = "vapi"                      # managed platform; Retell-swappable
 RANDOM_SEED: int = 42
 
 # --- byte-exact graded literals (CLAUDE.md §9 / NOTES.md — copy byte-for-byte) ---

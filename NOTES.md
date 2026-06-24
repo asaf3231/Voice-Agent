@@ -664,3 +664,21 @@ price, Aria did NOT invent a number — deferred to the team, Policy 4 ✓); gra
 **Still config (Asaf's side, voice):** (1) "Alta" pronounced "Ulta" → Vapi voice pronunciation/replacement rule; (2)
 Aria cut off mid-sentence by short backchannels → Vapi interruption-sensitivity (`startSpeakingPlan`/`stopSpeakingPlan`).
 **Config to align:** the Cal.com event type is **15 min**; set it to 30 to match `BOOKING_SLOT_MINUTES`, or we change §9.
+
+### 2026-06-24 — OQ-VOICE-1 REVISED: realtime speech-to-speech → standard TTS pipeline  *(Asaf — graded decision)*
+**Decision:** Drop OpenAI **realtime** speech-to-speech (the original `OQ-VOICE-1` choice) and use Vapi's **standard
+pipeline** — a chat LLM + a dedicated TTS voice + a transcriber. **Why:** across multiple live calls the realtime model
+produced **fragmented audio + mid-pitch silences over telephony** (it yielded its turn mid-sentence; backchannels cut it
+off). Two rounds of turn-taking tuning (`stop/startSpeakingPlan`) helped but didn't resolve it — realtime-over-telephony
+is inherently choppy. The standard STT→LLM→TTS pipeline is what Vapi is built for on phone calls (clean, non-fragmenting
+audio). Asaf chose "switch to standard TTS pipeline" over continuing to tune realtime.
+**Applied (graded — §9 + CLAUDE.md, Asaf-authorized):** `REALTIME_MODEL` (`gpt-realtime-2025-08-28`) → replaced by
+`LLM_MODEL = "gpt-4o"` + `TTS_PROVIDER="openai"` / `TTS_VOICE_ID="shimmer"` (OpenAI TTS — uses the existing OpenAI key,
+no extra provider) + `TRANSCRIBER_PROVIDER="deepgram"` / `TRANSCRIBER_MODEL="nova-2"`. `configure_assistant` now emits
+`model`(gpt-4o) + `voice` + `transcriber` (Vapi field shapes verified from the API ref to avoid a 400). Tests updated
+(`test_env` LLM_MODEL, `test_voice` model/voice/transcriber). **All graded invariants intact** (DISCLOSURE_LINE
+byte-exact static firstMessage — now spoken by TTS, *more* reliably verbatim than a generative realtime model;
+recordingEnabled CON3; 5 tools w/ server.url+secret; turn-taking). Suite **425 green**. `VOICE_PROVIDER="vapi"` +
+adapter unchanged. **Verify live:** the next call should have clean, uninterrupted audio + book end-to-end.
+**Iteration approach (Asaf):** use the **offline eval** (simulated_callee + rubric) for conversation/persona iteration —
+free, instant, deterministic — rather than a custom live two-agent rig (budget + a transcript-reviewer can't hear audio).

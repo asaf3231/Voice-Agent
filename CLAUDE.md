@@ -116,7 +116,7 @@ pytest               # ⚠ pin exact — the offline deterministic suite
 | Concern | Choice | Where the secret lives |
 |---|---|---|
 | Voice platform (telephony, turn-taking, recording, cost) | **Vapi** (`VOICE_PROVIDER`), Retell-swappable behind the adapter | `VAPI_API_KEY` (env) |
-| Conversational brain | **OpenAI Realtime** (`REALTIME_MODEL`), speech-to-speech | `OPENAI_API_KEY` (configured in the platform/env) |
+| Conversational brain | **standard pipeline** (OQ-VOICE-1 revised 2026-06-24): chat LLM (`LLM_MODEL`=gpt-4o) + TTS (`TTS_PROVIDER`/`TTS_VOICE_ID`) + transcriber (`TRANSCRIBER_*`) — realtime speech-to-speech fragmented over telephony | `OPENAI_API_KEY` (platform/env) |
 | Webhook authenticity | Vapi signing secret | `VAPI_WEBHOOK_SECRET` (env) — verified on every inbound webhook |
 | Booking | Calendar backend (Stage 6, sandbox default) | calendar OAuth token (env) |
 
@@ -385,7 +385,13 @@ BOOKING_SLOT_MINUTES   = 30
 BOOKING_LOOKAHEAD_DAYS = 10
 
 # --- providers / models / determinism ---
-REALTIME_MODEL         = "gpt-realtime-2025-08-28"   # OQ-VOICE-1; reconciled to Vapi's accepted realtime id at live install (ENV2, 2026-06-24, Asaf)
+# OQ-VOICE-1 REVISED 2026-06-24 (Asaf): moved off OpenAI realtime speech-to-speech
+# (fragmented/paused over telephony) → Vapi standard pipeline: chat LLM + TTS + STT.
+LLM_MODEL              = "gpt-4o"                     # conversational chat model
+TTS_PROVIDER           = "openai"                     # OpenAI TTS (uses the existing OpenAI key)
+TTS_VOICE_ID           = "shimmer"                    # OpenAI TTS voice (alloy/echo/fable/onyx/nova/shimmer)
+TRANSCRIBER_PROVIDER   = "deepgram"
+TRANSCRIBER_MODEL      = "nova-2"
 VOICE_PROVIDER         = "vapi"                       # managed; Retell-swappable behind the adapter
 RANDOM_SEED            = 42
 

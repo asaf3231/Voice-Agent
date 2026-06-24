@@ -9,7 +9,7 @@ mandatory so Retell is a config swap, never a rewrite). Two parts live here:
     These signatures are a graded contract — do not rename or change them.
   - `VapiVoiceProvider` — the Vapi implementation:
       * `configure_assistant(...)` is a PURE BUILDER (no network, offline-callable):
-        it wires REALTIME_MODEL, the system prompt, the 5 tool/function definitions
+        it wires LLM_MODEL, the system prompt, the 5 tool/function definitions
         (names == AGENT_TOOLS), and DISCLOSURE_LINE pinned to Vapi's STATIC
         first-message field (`firstMessage`), byte-exact (VOICE1 / CON2 / Red-Team
         Finding 4 — NOT a prompt the model could paraphrase). Recording is enabled
@@ -34,8 +34,12 @@ from typing import Any, Protocol, runtime_checkable
 from app.config import (
     AGENT_TOOLS,
     DISCLOSURE_LINE,
+    LLM_MODEL,
     MAX_CALL_DURATION_S,
-    REALTIME_MODEL,
+    TRANSCRIBER_MODEL,
+    TRANSCRIBER_PROVIDER,
+    TTS_PROVIDER,
+    TTS_VOICE_ID,
     get_setting,
     require_setting,
 )
@@ -295,7 +299,7 @@ class VapiVoiceProvider:
     ) -> dict[str, Any]:
         """Build the Vapi assistant payload (VOICE1 / CON2 / CON3).
 
-        Wires REALTIME_MODEL, the runtime-assembled system prompt, the 5 tool
+        Wires LLM_MODEL, the runtime-assembled system prompt, the 5 tool
         definitions, and — the graded chokepoint — DISCLOSURE_LINE in the STATIC
         first-message field (`firstMessage`), byte-exact and consumed from config
         (NOT a prompt the model could paraphrase). Recording is enabled together
@@ -314,15 +318,22 @@ class VapiVoiceProvider:
         tool_server_secret = get_setting("VAPI_WEBHOOK_SECRET")
 
         return {
-            # The OpenAI Realtime model is configured INSIDE the platform; we name
-            # the exact pinned id so the assistant uses the locked engine (ENV2).
+            # Standard pipeline (OQ-VOICE-1 revised 2026-06-24): a chat LLM, a
+            # dedicated TTS voice, and a transcriber — robust telephony audio,
+            # unlike realtime speech-to-speech which fragmented/paused on the phone.
             "model": {
                 "provider": "openai",
-                "model": REALTIME_MODEL,
+                "model": LLM_MODEL,
                 "messages": [
                     {"role": "system", "content": system_prompt},
                 ],
                 "tools": _tool_schemas(tool_server_url, tool_server_secret),
+            },
+            "voice": {"provider": TTS_PROVIDER, "voiceId": TTS_VOICE_ID},
+            "transcriber": {
+                "provider": TRANSCRIBER_PROVIDER,
+                "model": TRANSCRIBER_MODEL,
+                "language": "en",
             },
             # CHOKEPOINT (VOICE1/CON2/Finding 4): the disclosure is the platform's
             # static first message — spoken VERBATIM by the platform, byte-exact,

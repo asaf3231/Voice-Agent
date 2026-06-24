@@ -1,6 +1,6 @@
 """Stage 4 — VoiceProvider adapter tests (VOICE1, VOICE4, VOICE5, CON2, CON3).
 
-VOICE1 — configure_assistant wires REALTIME_MODEL, the system prompt, the 5 tool
+VOICE1 — configure_assistant wires LLM_MODEL, the system prompt, the 5 tool
          definitions (names == AGENT_TOOLS), and DISCLOSURE_LINE as the STATIC
          first-message, byte-exact.
 CON2   — disclosure is the static first-message, byte-exact (consumed from config).
@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.config import AGENT_TOOLS, DISCLOSURE_LINE, REALTIME_MODEL
+from app.config import AGENT_TOOLS, DISCLOSURE_LINE, LLM_MODEL
 import app.vapi_client as vapi
 from app.vapi_client import (
     CallResult,
@@ -40,10 +40,17 @@ def assistant() -> dict:
 class TestVoice1AssistantConfig:
     """VOICE1: the assistant payload is shape-valid and wires the graded pieces."""
 
-    def test_wires_realtime_model(self, assistant):
-        """The pinned REALTIME_MODEL is the assistant's model id (ENV2 cross-check)."""
-        assert assistant["model"]["model"] == REALTIME_MODEL
-        assert assistant["model"]["model"] == "gpt-realtime-2025-08-28"
+    def test_wires_llm_model(self, assistant):
+        """The pinned LLM_MODEL is the assistant's model id (ENV2 cross-check)."""
+        assert assistant["model"]["model"] == LLM_MODEL
+        assert assistant["model"]["model"] == "gpt-4o"
+
+    def test_standard_pipeline_voice_and_transcriber(self, assistant):
+        """Standard pipeline (OQ-VOICE-1 revised): a dedicated TTS voice + transcriber
+        replace realtime speech-to-speech (telephony-robust, non-fragmenting audio)."""
+        assert assistant["voice"]["provider"] == "openai"
+        assert assistant["voice"]["voiceId"]
+        assert assistant["transcriber"]["provider"] == "deepgram"
 
     def test_turn_taking_configured(self, assistant):
         """Turn-taking is set so brief backchannels don't fragment the agent's speech
