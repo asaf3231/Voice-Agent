@@ -40,6 +40,14 @@ from app.config import (
 )
 from app.persona import build_system_prompt, load_value_prop
 
+# Turn-taking tuning (Vapi-specific knobs, NOT §9 governance) so brief backchannels
+# ("okay", "mm-hm") and line noise don't cut Aria off mid-sentence — the live
+# "fragmented voice" issue (2026-06-24). `numWords=3` ⇒ the caller must say 3+ words
+# before the agent stops; `backoffSeconds` ⇒ pause before resuming after a real
+# interruption; `waitSeconds` ⇒ how long to wait after the caller stops before speaking.
+_STOP_SPEAKING_PLAN = {"numWords": 3, "voiceSeconds": 0.3, "backoffSeconds": 1.5}
+_START_SPEAKING_PLAN = {"waitSeconds": 0.6}
+
 
 # ===========================================================================
 # Structured result types (no exceptions across the seam, §6)
@@ -299,6 +307,10 @@ class VapiVoiceProvider:
             "recordingEnabled": True,
             # Anti-loop / cost guard mirrors the wall-clock cap (§9).
             "maxDurationSeconds": MAX_CALL_DURATION_S,
+            # Turn-taking so brief backchannels don't fragment the agent's speech
+            # (live "fragmented voice" fix 2026-06-24).
+            "stopSpeakingPlan": _STOP_SPEAKING_PLAN,
+            "startSpeakingPlan": _START_SPEAKING_PLAN,
             "metadata": {"variant": variant},
         }
 

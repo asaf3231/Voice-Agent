@@ -45,6 +45,12 @@ class TestVoice1AssistantConfig:
         assert assistant["model"]["model"] == REALTIME_MODEL
         assert assistant["model"]["model"] == "gpt-realtime-2025-08-28"
 
+    def test_turn_taking_configured(self, assistant):
+        """Turn-taking is set so brief backchannels don't fragment the agent's speech
+        (live "fragmented voice" fix 2026-06-24): require >=2 words to interrupt."""
+        assert assistant["stopSpeakingPlan"]["numWords"] >= 2
+        assert "startSpeakingPlan" in assistant
+
     def test_system_prompt_present_and_grounded(self, assistant):
         """A non-empty system prompt is wired, grounded in the value-prop content."""
         messages = assistant["model"]["messages"]
