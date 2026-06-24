@@ -1,13 +1,4 @@
-"""Stage 1 — SEC2, SEC3, SEC4 tests.
-Stage 8 — persistence tests (the cumulative cap is real across process invocations).
-
-SEC2: budget ledger correctness — records costs deterministically, tested at boundaries.
-SEC3: hard cap enforced before dialing — budget_permits() returns False at boundaries.
-SEC4: live sub-caps — live runs respect LIVE_CALL_BUDGET_USD and MAX_LIVE_CALLS.
-Persistence: two instances on the same persist_path share the cumulative total;
-             the cumulative guard blocks when the total across instances hits the cap;
-             a missing or corrupt file degrades gracefully (starts at 0, never crashes).
-"""
+"""Budget-ledger tests: the per-call and cumulative caps, and the over-cap alarm."""
 
 from __future__ import annotations
 

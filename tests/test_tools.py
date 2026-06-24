@@ -1,15 +1,4 @@
-"""Stage 3 — agent callable function tests (TOOL1–TOOL5).
-
-All offline, deterministic (frozen clock + MockCalendar). No network, no .env,
-no live client. Covers the 5 tools, the dispatch-identity assert, structured
-error handling, and the no-secret/no-full-phone-number disposition rule.
-
-  TOOL1 — check_availability: free slots, lead tz resolved vs calendar tz.
-  TOOL2 — book_meeting: idempotent; busy → "offer another"; no phantom booking.
-  TOOL3 — log_disposition: structured; NO full phone number / secret (masked).
-  TOOL4 — detect_voicemail: classifies voicemail greeting; leave ≤ VOICEMAIL_MAX_S.
-  TOOL5 — end_call + dispatch identity: clean hangup; registry keys == AGENT_TOOLS.
-"""
+"""Agent-tool tests: availability, idempotent booking, masked disposition, and voicemail detection."""
 
 from __future__ import annotations
 

@@ -1,32 +1,4 @@
-"""Alta Outbound Voice Agent — tests/test_leakage.py
-
-Stage 7 — Anti-leakage & packaging hardening (QA_checklist.md §10–§11).
-
-Every check in this file operates on the git-true tracked file set
-(`git ls-files --cached --others --exclude-standard`) or on in-repo
-data/ files.  No network access.  No real secret/PII is ever written
-to a tracked file — any "bad sample" used to validate the grep logic is
-constructed in-memory at test time only.
-
-Coverage (all written + test-verified):
-  LEAK1 — no secrets / 16-digit PAN (4-4-4-4 grouping, NOT bare CVV)
-           in any tracked file; sensitive files confirmed git-ignored.
-  LEAK2 — no real E.164 phone numbers in tracked non-synthetic files;
-           .gitignore covers recordings/transcripts/raw receipts;
-           mask_phone() is in effect (log_disposition test cross-check).
-  LEAK3 — no hardcoded lead/company/ICP/value-prop literals in app/ or scripts/;
-           forbidden literals derived from data/* AT TEST TIME (not hardcoded here).
-  LEAK4 — no fabricated outcomes: tests/eval do not hardcode booked=True
-           as a final scored result; metrics are computed.
-  LEAK5 — OS-agnostic: no absolute paths / C:\\ / /Users / /home / /opt
-           in app/ or scripts/; paths use pathlib relative to repo root.
-  PKG1  — every non-stdlib entry in requirements.txt is pinned with ==.
-  PKG2  — offline packaging sanity: all app modules importable + suite runs.
-  PKG3  — MANIFEST.in exists; sensitive paths are excluded; key paths included.
-  PKG4  — .gitignore correctness: .env / .venv / recordings etc. are ignored;
-           .env.example + synthetic fixtures + consent_allowlist.example.json
-           are tracked (not ignored).
-"""
+"""Anti-leakage tests: no secret, card number, or real PII in tracked files; reported metrics are computed, never faked."""
 
 from __future__ import annotations
 

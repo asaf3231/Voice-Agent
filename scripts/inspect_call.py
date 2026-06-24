@@ -146,7 +146,7 @@ def main(argv: list[str] | None = None, *, provider=None) -> int:
     if repo_root not in sys.path:
         sys.path.insert(0, repo_root)
 
-    # -- load .env (live entry point; never at import -- ENV4) ----------------
+    # -- load .env (live entry point; never at import) ------------------------
     from app.config import load_env
     load_env()
 

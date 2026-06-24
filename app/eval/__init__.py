@@ -21,7 +21,7 @@ class Speaker(str, Enum):
 
 
 class Stage(str, Enum):
-    """The dialog state-machine stages (CONV1).
+    """The dialog state-machine stages.
 
     Happy path (variant-dependent):
         OPENING → {A: DISCOVERY → PITCH | B: PITCH} → OBJECTION* → PROPOSE_SLOT → CLOSE → DONE.
@@ -41,7 +41,7 @@ class Stage(str, Enum):
 class Persona(str, Enum):
     """The offline simulated-callee personas.
 
-    The first five are the graded EVAL4 matrix (fixed in bakeoff.PERSONA_MATRIX).
+    The first five are the fixed evaluation matrix (see bakeoff.PERSONA_MATRIX).
     The trailing two are ADVERSARIAL personas for the stress suite (STR-L*); they
     are deliberately NOT in PERSONA_MATRIX, so adding them does not change the
     graded bake-off / eval numbers. The simulated-callee reply tables fall back to
@@ -55,11 +55,11 @@ class Persona(str, Enum):
     PROBING = "probing"
     # --- adversarial / stress personas (STR-L*; not in the graded matrix) ---
     INJECTION = "injection"        # prompt-injection / secret-exfil / policy-break attempts
-    SLOT_REJECTER = "slot_rejecter"  # wants the meeting, rejects the first offered TIME (Bug 1)
+    SLOT_REJECTER = "slot_rejecter"  # wants the meeting, rejects the first offered TIME
 
 
 class Disposition(str, Enum):
-    """The terminal outcome of a simulated call (TOOL3 vocabulary, used early here)."""
+    """The terminal outcome of a simulated call (the disposition vocabulary)."""
 
     BOOKED = "booked"
     DECLINED = "declined"

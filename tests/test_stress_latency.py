@@ -1,17 +1,4 @@
-"""Stress suite — Scope 3: Latency Boundaries & STT/TTS Tolerance — STR-P*.
-
-See docs/STRESS_TEST_ARCHITECTURE.md. Measure-and-penalize over the MOCK-BRIDGE +
-the tool layer. SLOs here are PROPOSALS (no latency SLO exists in QA_checklist.md
-yet) — confirm/adjust with Asaf. The generous compute-path SLO keeps the offline
-suite non-flaky while still catching a gross regression.
-
-Coverage:
-  STR-P1 — tool-webhook TTFB (auth + dispatch + envelope) p95 under the SLO.
-  STR-P3 — STT resilience: garbled human speech does not false-trigger voicemail.
-  STR-P5 — slow/timeout calendar backend → structured error, NO phantom booking.
-  STR-P2/P4/P6/P7 — e2e TTFB, TTS delay, qualify round-trip, server 5xx retry:
-           LIVE/fleet-tier (documented in the architecture, not asserted offline).
-"""
+"""Stress tests — latency boundaries and STT/TTS tolerance."""
 
 from __future__ import annotations
 

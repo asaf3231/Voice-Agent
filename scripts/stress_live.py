@@ -22,7 +22,7 @@ from pathlib import Path
 
 @dataclass
 class StressCallOutcome:
-    """One sequential stress-call outcome (structured; never an exception, §6)."""
+    """One sequential stress-call outcome (structured; never an exception)."""
 
     number_masked: str
     status: str                 # placed | consent_refused | budget_halted | place_failed
@@ -46,7 +46,7 @@ def run_stress_lane(
     The chokepoint order per call is identical to place_demo_call.py:
       consent_allows → budget_permits(is_live=True) → place_call → record_cost.
     A consent failure skips that number; a budget/count failure HALTS the lane
-    (the cap is reached). Never raises across this boundary (§6).
+    (the cap is reached). Never raises across this boundary.
 
     Injectable (provider/ledger/allowlist) so the gating is offline-testable with a
     FakeVoiceProvider + an in-memory ledger — no real call, no network.
@@ -60,12 +60,12 @@ def run_stress_lane(
             break
         masked = mask_phone(number)
 
-        # GATE 1 — consent (CON1): a non-consented number is skipped, never dialed.
+        # GATE 1 — consent: a non-consented number is skipped, never dialed.
         if not consent_allows(number, allowlist=allowlist):
             outcomes.append(StressCallOutcome(masked, "consent_refused"))
             continue
 
-        # GATE 2 — budget/count (SEC3/CALL4): enforces $1 per-call, $50 hard, $15
+        # GATE 2 — budget/count: enforces $1 per-call, $50 hard, $15
         # live reserve, AND the live count ceiling. A block HALTS the lane.
         if not ledger.budget_permits(projected_cost, is_live=True):
             outcomes.append(StressCallOutcome(masked, "budget_halted"))

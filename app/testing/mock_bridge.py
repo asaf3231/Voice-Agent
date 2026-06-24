@@ -17,7 +17,7 @@ import random
 import time
 from typing import Any
 
-from app.config import RANDOM_SEED  # the single determinism seed (CLAUDE.md §8)
+from app.config import RANDOM_SEED  # the single determinism seed
 
 # A clearly-fake shared secret for the offline bridge. NOT a real credential — the
 # server reads VAPI_WEBHOOK_SECRET from the env, which the test fixture sets to this.
@@ -100,7 +100,7 @@ def status_envelope(
 def garble(text: str, *, loss: float = 0.3, seed: int = RANDOM_SEED) -> str:
     """Drop a deterministic fraction of words (the packet-loss / low-SNR effect).
 
-    Seeded off config.RANDOM_SEED (the single offline determinism knob, §8) so the
+    Seeded off config.RANDOM_SEED (the single offline determinism knob) so the
     stress suite stays reproducible. loss=1.0 → empty (total loss).
     """
     rng = random.Random(seed)
@@ -116,7 +116,7 @@ class MockVapiBridge:
 
     The caller (a test) must set VAPI_WEBHOOK_SECRET in the env to `secret` so the
     server accepts the bridge's posts; pass a different `secret=` to a post() to
-    exercise fail-closed auth. The TestClient is built lazily (ENV4).
+    exercise fail-closed auth. The TestClient is built lazily.
     """
 
     def __init__(self, *, secret: str = DEFAULT_SECRET) -> None:

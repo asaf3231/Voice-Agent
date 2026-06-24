@@ -1,9 +1,4 @@
-"""Stage 1 — ENV2, ENV4 tests.
-
-ENV2: every non-stdlib import is pinned in requirements.txt with ==.
-ENV4 (scoped): import app.config, app.budget, app.consent with zero side effects
-               from a clean environment (no .env, no network, no client built).
-"""
+"""Environment tests: dependency pinning and import-safety (no side effects at import)."""
 
 from __future__ import annotations
 

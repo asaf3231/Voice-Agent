@@ -21,7 +21,7 @@ def main(argv: list[str] | None = None) -> int:
     """Entry point — gated live-call launcher.
 
     Returns 0 on success, 1 on any failure (consent refused, budget exceeded,
-    provider error, missing arg). Never raises across this boundary (§6).
+    provider error, missing arg). Never raises across this boundary.
     """
     if argv is None:
         argv = sys.argv[1:]
@@ -43,7 +43,7 @@ def main(argv: list[str] | None = None) -> int:
     if repo_root not in sys.path:
         sys.path.insert(0, repo_root)
 
-    # -- load .env (the gated live entry point; never at import -- ENV4) ------
+    # -- load .env (the gated live entry point; never at import) --------------
     from app.config import load_env
     load_env()
 
@@ -62,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
 
     masked = mask_phone(to_number)
 
-    # -- GATE 1: consent (CON1) — SINGLE CHOKEPOINT ---------------------------
+    # -- GATE 1: consent — SINGLE CHOKEPOINT ----------------------------------
     if not consent_allows(to_number, do_not_call=False, allowlist=allowlist):
         print(
             f"REFUSED: {masked} is not on the consent allowlist. Call not placed.\n"
@@ -71,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    # -- GATE 2: budget guard (SEC3/CALL4) — MUST pass before place_call ------
+    # -- GATE 2: budget guard — MUST pass before place_call -------------------
     # Use the persistent singleton so cumulative spend persists across invocations
     # (Stage-8 security-HIGH fix: the HARD_BUDGET_USD=$50 cap is now real, not illusory).
     ledger = get_ledger()
@@ -112,7 +112,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Placing live call to {masked} …")
     try:
         result = provider.place_call(to_number=to_number, assistant=assistant)
-    except Exception as exc:  # noqa: BLE001 — §6: surface as data
+    except Exception as exc:  # noqa: BLE001 — surface as data
         print(f"ERROR: Provider raised during place_call: {exc}", file=sys.stderr)
         return 1
 

@@ -1,13 +1,4 @@
-"""Stage 3 — booking layer tests (BOOK1–BOOK3) + calendar import-safety.
-
-Backend under test: app.calendar_client.MockCalendar (the offline default).
-The live Cal.com client is NEVER constructed here (gated/lazy — ENV4/CON4).
-A frozen clock makes the slot window reproducible.
-
-  BOOK1 — list_slots returns only genuinely free slots, with explicit tz handling.
-  BOOK2 — create_event creates a BOOKING_SLOT_MINUTES event, returns a real id.
-  BOOK3 — a conflict yields structured "slot_taken"; no phantom/overwrite booking.
-"""
+"""Booking-layer tests: idempotency, no double-booking, conflict re-offer, and calendar import-safety."""
 
 from __future__ import annotations
 

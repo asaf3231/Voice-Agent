@@ -1,16 +1,4 @@
-"""Stress suite — Phase C: the LIVE stress-lane GATING, tested OFFLINE.
-
-The live lane (scripts/stress_live.py) places real calls (real money) and is
-human-coordinated — never run in the suite. But its GATING (the graded, valuable
-part) is proven here with a FakeVoiceProvider spy + an in-memory ledger: the lane
-honors consent, halts at the live COUNT ceiling and at the $ reserve, and never
-dials past a failed gate. No network, no real call.
-
-Coverage:
-  - the lane halts at the live count ceiling (MAX_LIVE_STRESS_CALLS via the ledger).
-  - the lane halts at the $ live reserve (LIVE_CALL_BUDGET_USD analog).
-  - a non-consented number is refused and NEVER dialed (consent chokepoint).
-"""
+"""Stress tests — the live stress-lane gating, exercised entirely offline."""
 
 from __future__ import annotations
 

@@ -1,22 +1,4 @@
-"""Stress suite — Scope 1: Logic, RAG & State Integrity (text-bypass) — STR-L*.
-
-See docs/STRESS_TEST_ARCHITECTURE.md. These drive the dialog FSM via the seeded
-SimulatedCallee and the tool layer via tools.dispatch DIRECTLY — no audio, no
-network, fully deterministic (config.RANDOM_SEED). This is the OFFLINE tier a
-100+-parallel tester fleet fans out over at $0.
-
-"RAG"/grounding here = the authoritative-content bound (Policy 4): the agent may
-assert ONLY data/value_prop.md content. There is no vector store.
-
-Coverage:
-  STR-L1  — turn cap → FAILSAFE_HANGUP_LINE byte-exact, no persona escapes it.
-  STR-L2  — context overflow (200KB value-prop) → no crash, disclosure-first holds.
-  STR-L4/5— prompt-injection / secret-exfil: the agent's content stays bounded.
-  STR-L7  — booking integrity under contradiction: no phantom confirmation.
-  STR-L9  — adversarial tool args via dispatch → structured errors, never a crash.
-  STR-L11 — slot_reoffer_handled signal (Bug 1) + an xfail end-to-end guard.
-  STR-L14 — unicode / smart-quote value-prop → graded literals never drift.
-"""
+"""Stress tests — logic, RAG, and state integrity (the text-bypass path)."""
 
 from __future__ import annotations
 

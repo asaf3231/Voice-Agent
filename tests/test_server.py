@@ -1,14 +1,4 @@
-"""Stage 4 — FastAPI webhook server tests (VOICE2, VOICE3, import-safety).
-
-VOICE2 — an inbound webhook with a bad/missing VAPI_WEBHOOK_SECRET signature is
-         rejected (401), never processed; a valid one is processed.
-VOICE3 — a verified tool-call webhook routes to the right AGENT_TOOLS function with
-         validated args; an unknown tool → a structured error, no crash.
-Import-safety — importing app.server has zero side effects (no .env read, no client).
-
-Fully OFFLINE — TestClient + a locally-computed valid/invalid signature. No network,
-no real Vapi/OpenAI client, no call.
-"""
+"""Webhook-server tests: secret verification (fail-closed), tool dispatch, and import-safety."""
 
 from __future__ import annotations
 

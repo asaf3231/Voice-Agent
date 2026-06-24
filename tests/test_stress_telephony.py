@@ -1,20 +1,4 @@
-"""Stress suite — Scope 2: Telephony & E2E Audio Protocols — STR-T*.
-
-See docs/STRESS_TEST_ARCHITECTURE.md. Driven by the MOCK-BRIDGE (app.testing.
-mock_bridge) over the webhook + transcript layer. Honest scoping: the media path is
-Vapi's, so raw SIP/RTP faults are not injectable here — we exercise the EFFECTS that
-reach our service (malformed/redelivered webhooks, lifecycle drops, lossy
-transcripts). Genuinely media-level cases (real barge-in) are LIVE-GATED.
-
-Coverage:
-  STR-T2/T3 — lossy / noisy transcript → no false voicemail trigger, no crash.
-  STR-T5    — drop mid-call / empty envelope → structured, never a 500.
-  STR-T6    — voicemail greeting detected; leave ≤ VOICEMAIL_MAX_S then end (TOOL4).
-  STR-T8    — webhook redelivery storm → idempotent booking (no double-book).
-  STR-T9    — malformed envelopes (no toolCallId, garbled args, flat form) → no crash.
-  STR-T10   — disclosure pinned to the static first-message (offline proxy for LIVE2).
-  STR-T1    — real barge-in: LIVE-GATED (skipped here, measured via inspect_call).
-"""
+"""Stress tests — telephony and end-to-end audio protocols (webhook/transcript faults)."""
 
 from __future__ import annotations
 

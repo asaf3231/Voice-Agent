@@ -1,12 +1,4 @@
-"""Stage 1 — SEC1 tests.
-
-SEC1: no secret / card number in any tracked file.
-  - No API keys, tokens, or the 16-digit PAN (4-4-4-4 grouping) in any .py or .json or .md
-    that would be tracked.
-  - .env is gitignored; .env.example has placeholders only.
-  - Home_Assignment_email.md and REFERENCE/ are gitignored.
-  - LEAK5: no hardcoded absolute paths (OS-agnostic via pathlib).
-"""
+"""Secret-hygiene tests: no secret, key, or card number appears in a log line or a tracked file."""
 
 from __future__ import annotations
 

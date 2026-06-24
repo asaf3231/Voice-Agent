@@ -1,12 +1,4 @@
-"""Stage 1 — CON1 tests.
-
-CON1: the consent-allowlist gate.
-  - consent_allows() returns True only for allowlisted numbers.
-  - Non-allowlisted numbers are refused (never reach place_call).
-  - Allowlist validates on load (malformed/empty → clean explicit error, not allow-none).
-  - do_not_call=True suppresses a lead regardless of allowlist status (CON5).
-  - mask_phone() masks all but last 2 digits (LEAK2).
-"""
+"""Consent-gate tests: only allowlisted, non-DNC numbers are dialable; a malformed allowlist is rejected."""
 
 from __future__ import annotations
 

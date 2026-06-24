@@ -25,7 +25,7 @@ from app.persona import ConversationResult
 
 
 # ---------------------------------------------------------------------------
-# Harness configuration constants (not §9 graded constants — harness-local)
+# Harness configuration constants (harness-local)
 # ---------------------------------------------------------------------------
 
 # Path to the labeled transcript fixtures (relative to repo root at runtime).
@@ -62,7 +62,7 @@ class AggregateMetrics:
     """Reproducible aggregate metrics over the full persona matrix for one variant.
 
     Each rate is a fraction over all personas (0.0–1.0). All figures are
-    COMPUTED from labeled transcripts — never hardcoded (EVAL2/LEAK4).
+    Computed from labeled transcripts — never hardcoded.
     """
 
     variant: str
@@ -103,7 +103,7 @@ class EvalSummary:
 
 
 # ---------------------------------------------------------------------------
-# Fixture loading — labeled simulated transcripts (EVAL6 negative guards)
+# Fixture loading — labeled simulated transcripts (negative guards)
 # ---------------------------------------------------------------------------
 
 def _fixtures_dir(root: Path | str | None = None) -> Path:
@@ -148,10 +148,10 @@ def load_fixtures(
     """Load, score, and return all labeled transcript fixtures.
 
     Fixtures are JSON files under `fixtures/transcripts/` (tracked, synthetic, no
-    real PII — LEAK2). Each file has a `label` block (the expected rubric signals)
+    real PII). Each file has a `label` block (the expected rubric signals)
     and a `transcript` array of turns. Scores are COMPUTED by the rubric at
-    runtime — the `label` is ground-truth for EVAL6 regression guards, NOT an
-    asserted literal used to fake a computed score (EVAL2/LEAK4).
+    runtime — the `label` is ground-truth for the regression guards, not an
+    asserted literal used to fake a computed score.
 
     Args:
         root:            repo root override (for tests using tmp_path).
@@ -192,7 +192,7 @@ def run_persona_matrix(
 
     Wraps `bakeoff.run_cells` so the harness and the bake-off share the same
     conversation runner; the harness adds the aggregate machinery and fixture
-    loading on top. Fully deterministic under RANDOM_SEED (EVAL1).
+    loading on top. Fully deterministic under RANDOM_SEED.
     """
     cells = run_cells(value_prop_path=value_prop_path)
     return [
@@ -215,7 +215,7 @@ def _aggregate_variant(
     variant: str,
     results: list[PersonaResult],
 ) -> AggregateMetrics:
-    """Aggregate scored results for one variant into computed rates (EVAL5)."""
+    """Aggregate scored results for one variant into computed rates."""
     from app.persona import build_policy  # lazy import — no side effects at import
 
     rows = [r for r in results if r.variant == variant]
@@ -250,12 +250,12 @@ def run_eval(
     """Run the full offline eval harness; return a deterministic EvalSummary.
 
     Steps:
-      1. Run the persona matrix (all variants × all personas) — EVAL1/EVAL4.
-      2. Aggregate per-variant metrics — EVAL5.
-      3. Load and score labeled fixtures (if any) — EVAL6.
+      1. Run the persona matrix (all variants × all personas).
+      2. Aggregate per-variant metrics.
+      3. Load and score labeled fixtures (if any).
 
-    All scores are COMPUTED from the rubric; nothing is hardcoded (EVAL2/LEAK4).
-    No network, no client, no wall-clock — fully offline (EVAL1/ENV4).
+    All scores are computed from the rubric; nothing is hardcoded.
+    No network, no client, no wall-clock — fully offline.
 
     Args:
         value_prop_path: override value-prop file path (for tests).

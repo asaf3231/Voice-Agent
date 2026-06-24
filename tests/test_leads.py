@@ -1,14 +1,4 @@
-"""Stage 1 — LEAD1, LEAD2, LEAD3 tests.
-
-LEAD1: data/leads.synthetic.json parsed by name; required fields present;
-       missing/renamed field → clean explicit startup error, not later KeyError.
-LEAD2: data/icp.synthetic.json + data/value_prop.md load and validate.
-LEAD3: no lead name/company/phone/ICP/value-prop literal hardcoded in app/ code.
-
-Stage 5 update: load_leads() and load_icp() are now the canonical app loaders
-promoted into app/orchestrate.py. This module imports them from there — no
-duplicated logic (CLAUDE.md §8 / brief Stage 5). All tests remain identical.
-"""
+"""Lead-loader tests: schema validation and the required-field contract."""
 
 from __future__ import annotations
 

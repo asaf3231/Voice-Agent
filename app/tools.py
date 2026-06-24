@@ -41,7 +41,7 @@ from app.calendar_client import (
 )
 from app.consent import mask_phone
 
-# The disposition vocabulary (TOOL3). Kept here (the tool layer owns it at
+# The disposition vocabulary. Kept here (the tool layer owns it at
 # runtime); app/eval/Disposition mirrors it for the offline harness.
 VALID_DISPOSITIONS = frozenset(
     {"booked", "declined", "no_answer", "voicemail", "error"}
@@ -50,13 +50,13 @@ VALID_DISPOSITIONS = frozenset(
 # Max free slots check_availability returns to the agent. A LIVE calendar can
 # return hundreds of 15-min slots across the lookahead window; handing all of
 # them to the voice model (a) overflowed the voice platform's tool-result
-# (caused "No result returned" on the live call 2026-06-24) and (b) is poor UX —
-# the agent should offer a few natural choices. NOT a §9 governance constant; a
+# (caused "No result returned" on a live call) and (b) is poor UX —
+# the agent should offer a few natural choices. Not a governance constant; a
 # local tool-output tuning knob (mirrors orchestrate.PROJECTED_COST_PER_CALL).
 MAX_SLOTS_OFFERED = 5
 
-# Voicemail-greeting cues — case-insensitive substring signals (TOOL4). Generic
-# carrier/greeting phrases only; NOT lead/business data (LEAK3-safe).
+# Voicemail-greeting cues — case-insensitive substring signals. Generic
+# carrier/greeting phrases only; not lead/business data.
 _VOICEMAIL_CUES = (
     "leave a message",
     "leave your message",
@@ -76,7 +76,7 @@ _VOICEMAIL_CUES = (
 
 
 # ===========================================================================
-# Result types — structured tool outputs (no exceptions across the seam, §6)
+# Result types — structured tool outputs (no exceptions across the seam)
 # ===========================================================================
 
 @dataclass(frozen=True)
@@ -192,7 +192,7 @@ def check_availability(
             slots = slots[::stride][:max_slots]
         payload = [_slot_to_payload(s, lead_zone) for s in slots]
         return ToolResult(ok=True, data={"slots": payload, "count": len(payload)})
-    except Exception as exc:  # noqa: BLE001 — surface as data (§6)
+    except Exception as exc:  # noqa: BLE001 — surface as data
         return ToolResult(ok=False, error="calendar_error", message=str(exc))
 
 
@@ -325,7 +325,7 @@ def detect_voicemail(
 
 # NOTE: there is no `end_call` tool. Ending the call is pinned to Vapi's NATIVE
 # end-call (endCallFunctionEnabled) + the byte-exact END_CALL_MESSAGE — a custom
-# function returning JSON never actually terminated the call (D9, 2026-06-24).
+# function returning JSON never actually terminated the call.
 
 
 # ===========================================================================
@@ -453,7 +453,7 @@ def qualify(
         # (best_score == 0). Do NOT report a substantive route with a null emphasis:
         # that previously told the live agent to "lead with ONLY this value-prop: None"
         # and made rubric.pitch_tailored pass vacuously on a true routing miss
-        # (independent review 2026-06-24). Ask to clarify instead of pitching nothing.
+        # Ask to clarify instead of pitching nothing.
         return ToolResult(ok=True, data={
             "answer_quality": "unmapped",
             "matched_themes": themes,
@@ -480,7 +480,7 @@ def qualify(
 
 
 # ===========================================================================
-# Dispatch registry — keys MUST equal AGENT_TOOLS (import-time assert, TOOL5)
+# Dispatch registry — keys MUST equal AGENT_TOOLS (import-time assert)
 # ===========================================================================
 
 TOOL_REGISTRY: dict[str, Callable[..., ToolResult]] = {

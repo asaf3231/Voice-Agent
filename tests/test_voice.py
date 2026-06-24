@@ -1,17 +1,4 @@
-"""Stage 4 — VoiceProvider adapter tests (VOICE1, VOICE4, VOICE5, CON2, CON3).
-
-VOICE1 — configure_assistant wires LLM_MODEL, the system prompt, the 5 tool
-         definitions (names == AGENT_TOOLS), and DISCLOSURE_LINE as the STATIC
-         first-message, byte-exact.
-CON2   — disclosure is the static first-message, byte-exact (consumed from config).
-CON3   — recording is enabled together with the disclosure.
-VOICE4 — _get_vapi() is lazy; the singleton is None at import; no client built by
-         the pure builder.
-VOICE5 — the VoiceProvider interface is the only egress; the fake + the Vapi impl
-         both satisfy it and are interchangeable (swappable adapter).
-
-Fully OFFLINE — no real Vapi/OpenAI client, no call, no network.
-"""
+"""VoiceProvider-adapter tests: the assistant payload, the byte-exact disclosure first-message, and lazy-client import-safety."""
 
 from __future__ import annotations
 

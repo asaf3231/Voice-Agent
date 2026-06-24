@@ -1,17 +1,4 @@
-"""Alta test suite — shared fixtures (QA_checklist.md §0).
-
-Fixtures defined here:
-  - tmp_leads_json     : a small schema-valid leads.synthetic.json path
-  - tmp_icp_json       : a minimal valid icp.synthetic.json path
-  - tmp_value_prop     : a minimal value_prop.md path
-  - tmp_allowlist      : a consent allowlist with one allowed + one absent number
-  - allowed_number     : the E.164 number that IS on tmp_allowlist
-  - absent_number      : an E.164 number deliberately NOT on tmp_allowlist
-  - FakeVoiceProvider  : a VoiceProvider stand-in (scripted, never networks)
-
-These fixtures create real temporary files in tmp_path so the modules under
-test can read them as they would in production. No network, no .env.
-"""
+"""Shared pytest fixtures for the offline suite (consent allowlist, a fake voice provider, etc.)."""
 
 from __future__ import annotations
 

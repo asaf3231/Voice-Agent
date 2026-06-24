@@ -1,17 +1,4 @@
-"""Stage 5 — CALL1, CALL2, CALL3, CALL4, CON1, CON4, CON5, SEC3 tests.
-
-Tests for app/orchestrate.py (campaign runner) and scripts/place_demo_call.py
-(the second entry point — spy-proven to route through both gates).
-
-Fixtures used (from conftest.py):
-  - tmp_leads_json       : valid leads file (lead-001 normal; lead-002 DNC)
-  - tmp_allowlist        : allowlist with ALLOWED_NUMBER only
-  - allowed_number       : the E.164 on tmp_allowlist
-  - absent_number        : an E.164 deliberately NOT on tmp_allowlist
-  - fake_voice_provider  : FakeVoiceProvider (never networks)
-
-All tests use FakeVoiceProvider — zero live calls in the default suite (CON4).
-"""
+"""Campaign-runner tests: the consent and budget gates run before dialing, plus retries, the daily cap, and clean halts."""
 
 from __future__ import annotations
 

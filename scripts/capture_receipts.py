@@ -35,7 +35,7 @@ def capture_receipt(
     """Capture and write a redacted receipt for *call_id*.
 
     Returns the receipt dict (also written to disk).
-    Raises nothing — errors are returned in the dict under "error" (§6).
+    Raises nothing — errors are returned in the dict under "error".
 
     Args:
         call_id: the voice-platform call identifier.
@@ -49,7 +49,7 @@ def capture_receipt(
 
     try:
         cost_result = provider.fetch_call_cost(call_id=call_id)
-    except Exception as exc:  # noqa: BLE001 — §6: surface as data
+    except Exception as exc:  # noqa: BLE001 — surface as data
         receipt: dict = {
             "call_id": call_id,
             "cost_usd": None,
@@ -69,7 +69,7 @@ def capture_receipt(
         _write_receipt(receipt, receipts_dir)
         return receipt
 
-    # SEC5: the figure equals the provider's reported fetch_call_cost — verified here,
+    # The figure equals the provider's reported fetch_call_cost — verified here,
     # not asserted from a stale copy.
     receipt = {
         "call_id": call_id,
@@ -137,7 +137,7 @@ def main(argv: list[str] | None = None, *, provider=None) -> int:
     if repo_root not in sys.path:
         sys.path.insert(0, repo_root)
 
-    # -- load .env (live entry point; never at import -- ENV4) ----------------
+    # -- load .env (live entry point; never at import) ------------------------
     from app.config import load_env
     load_env()
 

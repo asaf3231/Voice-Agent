@@ -1,20 +1,4 @@
-"""Stress suite — Scope 4: Concurrency & Infrastructure Load — STR-C*.
-
-See docs/STRESS_TEST_ARCHITECTURE.md. This system has no DB / vector store; the
-"DB lockup / concurrent retrieval" analogs are the persistent budget-ledger FILE,
-the booking idempotency cache, and the consent gate. These tests assert the SAFE
-(sequential) invariants hold and that concurrent access does not crash/corrupt —
-and they DETERMINISTICALLY demonstrate the documented cross-process budget TOCTOU
-(the reason live calls must run sequentially), rather than relying on a flaky race
-firing.
-
-Coverage:
-  STR-C1 — the budget guard is sound when used sequentially (the supported mode).
-  STR-C2 — the consent gate is a pure stateless read → safe under concurrency.
-  STR-C3 — booking idempotency: sequential convergence + concurrent no-crash.
-  STR-C6 — distinct leads do not bleed state (slot ownership + dispatch lead_id).
-  STR-C7 — cross-process budget TOCTOU demonstrated deterministically (two ledgers).
-"""
+"""Stress tests — concurrency and infrastructure load."""
 
 from __future__ import annotations
 

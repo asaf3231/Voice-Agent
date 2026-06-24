@@ -18,7 +18,7 @@ from app.eval import Persona
 from app.eval.rubric import RubricResult, score_transcript
 from app.persona import ConversationResult, build_policy, run_conversation
 
-# The fixed Stage-2 persona matrix (EVAL4) — small + deterministic by design.
+# The fixed persona matrix — small and deterministic by design.
 PERSONA_MATRIX: tuple[Persona, ...] = (
     Persona.COOPERATIVE,
     Persona.OBJECTING,

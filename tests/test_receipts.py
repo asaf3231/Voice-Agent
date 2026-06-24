@@ -1,8 +1,4 @@
-"""Stage 8 — SEC5 tests: capture_receipts.py writes a redacted receipt equal
-to the fake provider's reported cost; no full phone number or secret in the file.
-
-All tests are offline, deterministic, and network-free.
-"""
+"""Receipt-capture tests: a redacted receipt records the provider's reported cost, with no PII or secrets."""
 
 from __future__ import annotations
 

@@ -1,18 +1,4 @@
-"""Stage 2 — conversation design tests (CONV1–CONV6 + CON2 offline + EVAL2).
-
-These are written TEST-FIRST against the dialog policy + the computed rubric.
-Everything here is OFFLINE, deterministic (config.RANDOM_SEED), and network-free.
-
-Coverage:
-  CONV1 — state machine advances through all stages under a fixed persona.
-  CONV2 — value-prop pitched (from data/value_prop.md) before the slot proposal.
-  CONV3 — objection handled (scripted recovery, not a hang-up) before a hard no.
-  CONV4 — authoritative-content bound: a probing persona elicits no invented claim.
-  CONV5 — turn cap fires at MAX_AGENT_TURNS; no (N+1)th agent turn.
-  CONV6 — FAILSAFE_HANGUP_LINE byte-exact on cap; clean disposition.
-  CON2  — disclosure-first byte-exact (offline mirror of the static first-message).
-  EVAL2 — scores are COMPUTED by the rubric, never hardcoded; bake-off reproducible.
-"""
+"""Conversation-design tests: the dialog state machine, the byte-exact literals, and disclosure-first."""
 
 from __future__ import annotations
 

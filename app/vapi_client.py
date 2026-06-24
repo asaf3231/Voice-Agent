@@ -405,7 +405,7 @@ class VapiVoiceProvider:
             },
         }
 
-    # -- live outbound (lazy client only — ENV4) ------------------------------
+    # -- live outbound (lazy client only) ------------------------------------
 
     def place_call(
         self,

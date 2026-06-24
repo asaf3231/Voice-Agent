@@ -1,19 +1,4 @@
-"""A1 (D3 + D2) — TDD: authoritative lead_id + timezone injected at the chokepoint,
-and check_availability returns a pre-formatted 'say-this' slot string.
-
-Defects this guards (the 3-call live review, 2026-06-24):
-  D3 lead-blindness  — book_meeting/log_disposition were called with a fabricated
-     lead_id ("lead_id_value" / "lead_id_placeholder") because the MODEL supplied it.
-  D2 timezone misvoice — the model voiced the UTC field labelled "eastern" and
-     invented lead_timezone="America/New_York".
-
-The fix moves both from prompt-hope to the dispatch/webhook chokepoint: the runtime
-injects the authoritative lead_id + lead_timezone (the model no longer supplies them),
-and check_availability hands the model a ready-to-speak slot string in the lead's tz.
-
-These fail on the current code (no injection, no `say`, schemas still expose the
-lead fields, no get_lead_context / extract_lead_context).
-"""
+"""Tests that the authoritative lead_id and timezone are injected at the dispatch chokepoint — never trusted from the model."""
 
 from __future__ import annotations
 

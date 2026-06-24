@@ -1,25 +1,4 @@
-"""Alta Outbound Voice Agent — tests/test_eval.py
-
-Stage-6 offline evaluation harness tests (EVAL1–EVAL6).
-
-Coverage:
-  EVAL1 — deterministic + offline: same scores across two independent runs;
-           no network, no wall-clock, no global-random dependence.
-  EVAL2 — scores computed, never hardcoded: the rubric produces derived signals;
-           no test asserts a metric by copying a literal outcome (LEAK4 cross-check).
-  EVAL3 — rubric covers disclosure-said / pitch-delivered / objection-handled /
-           meeting-booked / compliance-ok — each a checkable, computable signal.
-  EVAL4 — persona matrix yields the expected disposition per persona; discovery-
-           responsiveness is modeled (Stage-6 enrichment: Variant A's probing
-           persona accepts after discovery; Variant B's does not).
-  EVAL5 — aggregate metrics are reproducible across runs (book-rate, disclosure-
-           compliance, objection-handled, compliance-ok, avg turns).
-  EVAL6 — regression guards: labeled NEGATIVE fixtures catch a disclosure-first
-           regression and a phantom-booking (books-without-availability) regression.
-
-Every score in this file is DERIVED by the rubric from a transcript — no test
-hard-codes a `booked=True` result or a magic literal score (EVAL2/LEAK4).
-"""
+"""Evaluation-harness tests: the persona matrix runs, scores are computed (never hardcoded), and results are deterministic."""
 
 from __future__ import annotations
 

@@ -1,18 +1,4 @@
-"""Bug-2 fix — TDD for the `qualify` tool + the `pitch_tailored` rubric signal.
-
-`qualify` turns "tailor the pitch to what they say" from an unobservable prompt
-hope into an explicit, deterministic, logged, unit-testable routing decision
-(CTO review 2026-06-24): given the prospect's discovery answer it returns which
-grounded value-prop to emphasize, and flags vague/junk/empty answers so the agent
-asks a clarifying question instead of plowing through the canned funnel.
-
-These tests are written FIRST and fail on the current codebase (Red): `qualify`
-and `pitch_tailored` do not yet exist, `"qualify"` is not in AGENT_TOOLS / the
-tool schemas, and the system prompt never mentions it.
-
-All `qualify` content stays grounded in value_prop.md (LEAK3): the emphasized
-text is always one of the file's value-props, never invented here.
-"""
+"""Tests for the `qualify` tailoring oracle and the `pitch_tailored` rubric signal."""
 
 from __future__ import annotations
 
