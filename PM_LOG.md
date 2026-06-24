@@ -486,6 +486,30 @@ Then PM-verify + **independent review** (budget is contract-adjacent governance)
 runbook + the signed-webhook smoke test and hand the live trigger to Asaf (real `.env` + `make call`). Halt at the
 live-execution boundary.
 
+## 2026-06-23 22:25 — [VOICE] SESSION END / HANDOFF (live-readiness prep done; HALT for Asaf to fix 2 setup gaps + run live)
+Did (Asaf completed external provisioning: Twilio +972 number in Vapi, .env aligned, x-vapi-secret set, allowlist prepared):
+- **Webhook auth reconciled** to Vapi's CONFIRMED static `x-vapi-secret` scheme (`verify_signature` HMAC → `verify_secret`
+  constant-time compare, fail-closed; dead `hashlib` removed; `test_server.py` updated). This was a **live blocker** — the
+  old HMAC verify would have 401'd every real Vapi webhook → no booking. Independent **security review → APPROVE**.
+- **`make preflight`** (`scripts/preflight.py` + `tests/test_preflight.py`): checks the 5 required settings present + the
+  allowlist loads; prints names/PRESENT-MISSING + spend totals only, **never a secret value** (test-asserted).
+- Fixed a real standalone-run bug: scripts couldn't `import app` under `make call`/`make preflight` → added in-`main()`
+  repo-root `sys.path` bootstrap (no import-time side effect).
+- **Docs:** `docs/LIVE_RUNBOOK.md` + `docs/STAGE9_STORYBOARD.md`.
+- Independent review's 3 minor findings all fixed (stale HMAC docstrings; test phone → +1555 fictitious; no-leak test
+  strengthened). 
+Verified numbers (PM-run): **419 passed / 0 failed**; `make preflight` runs against the real `.env` and correctly reports
+status with **zero secret values printed**.
+Status now: ✅ **Stages 0–7 ✅; Stage 8 build + live-readiness ✅; committed.** 🔄 **Live half pending Asaf.**
+**⚠ Preflight caught 2 real setup gaps (Asaf to fix — .env/allowlist, not code):** (1) `VAPI_WEBHOOK_SECRET` reads MISSING
+(likely still commented / spaces around `=` / misnamed); (2) `consent_allowlist.json` not found at the repo-root default
+(place it there or set `CONSENT_ALLOWLIST_PATH`). **`make preflight` must say PASSED before any live call.**
+Next PM/Asaf should: Asaf fixes the 2 gaps → `make preflight` PASSED → follow `docs/LIVE_RUNBOOK.md` (serve+tunnel+signed
+smoke test → **sequential** `make call TO=<consented #>` → `capture_receipts.py`) → PM verifies LIVE1/LIVE2/LIVE3/SEC5 from
+the real transcript + Cal.com + receipts. Then Stage 9 (video) per the storyboard.
+Watch out for / open: the 2 preflight gaps; run live calls SEQUENTIALLY; verify `DISCLOSURE_LINE` byte-exact from the REAL
+transcript (never assumed); Cal.com 409-only idempotency to validate live; keep a recorded successful call for the video.
+
 ## 2026-06-23 ~21:30 — [VOICE] SESSION END / HANDOFF (Stage 8 build half ✅; HALT at the live-execution boundary)
 Did: built + verified + independently reviewed the **offline half of Stage 8**, closing the Stage-7 security-HIGH.
 - Cold executer: opt-in **persistent `BudgetLedger`** (gitignored state file → cumulative $50 cap real across invocations),

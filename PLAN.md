@@ -294,11 +294,13 @@ Do not mark a stage complete if its QA checks were only drafted but not run.
   Stage-8 entry blocker (security HIGH):** the budget ledger is in-memory → the cumulative $50 cap is illusory across
   invocations; must be made persistent before any live call (Asaf decision; pairs with Stage-8 receipts). The Stage-4
   public-tunnel live webhook smoke test is also owed at Stage 8. `LIVE0` provisioning owned by Asaf (not a code gate).
-- **Stage 8 (in progress):** **build half ✅** (PM-verified 2026-06-23, **414 green**) — the budget-persistence security-HIGH
-  is **closed** (cumulative $50 cap real across invocations; independent review caught + we fixed a Critical where the demo
-  script wasn't recording spend) + `capture_receipts.py`. **Live half pending Asaf** (real `.env` + `make call` to the 3
-  consented numbers; the PM will not auto-place live calls). Operating constraint: run live calls **sequentially** (accepted
-  cross-process budget-ledger limitation).
+- **Stage 8 (in progress):** **build + live-readiness ✅** (PM-verified 2026-06-23, **419 green**). Build half: budget-persistence
+  security-HIGH **closed** + `capture_receipts.py`. Live-readiness: **webhook auth reconciled to Vapi's confirmed
+  `x-vapi-secret` static-secret scheme** (was HMAC → would have 401'd every real webhook; independent security review APPROVE);
+  **`make preflight`** added (names/PRESENT-MISSING only, no secret values); `docs/LIVE_RUNBOOK.md` + `docs/STAGE9_STORYBOARD.md`
+  written; scripts fixed to run standalone. **Live half pending Asaf** (real calls/money). Preflight currently reports 2 setup
+  gaps to fix: `VAPI_WEBHOOK_SECRET` MISSING + `consent_allowlist.json` not found at root. **`make preflight` must say PASSED
+  before any live call.** Run live calls **sequentially** (accepted cross-process ledger limitation).
 - **Decisions locked:** service-only repo (no notebook); Vapi (Retell-swappable); OpenAI Realtime brain;
   lean live calling under a hard $50 cap; secrets+PII+fabricated-outcomes are the anti-leakage core;
   **operating model — `general-purpose` executers + native `/code-review` & `/security-review` gates;

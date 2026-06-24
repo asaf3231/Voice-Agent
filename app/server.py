@@ -1,14 +1,14 @@
 """Alta Outbound Voice Agent — app/server.py
 
-Single responsibility: the signature-verified FastAPI webhook server the voice
+Single responsibility: the secret-verified FastAPI webhook server the voice
 platform calls for tool/function invocations and call-status events. It is the
 inbound counterpart to the VoiceProvider adapter (which owns OUTBOUND calls).
 
 What it enforces:
-  - Webhook authenticity (VOICE2): every inbound webhook is verified against
-    VAPI_WEBHOOK_SECRET — HMAC-SHA256 over the RAW request body, constant-time
-    compared to the signature header. A bad/missing signature → HTTP 401, never
-    processed. A valid one → processed.
+  - Webhook authenticity (VOICE2): every inbound webhook is authenticated against
+    VAPI_WEBHOOK_SECRET — Vapi sends the configured server secret verbatim in the
+    `x-vapi-secret` header; we constant-time compare it to our secret. A bad/missing
+    secret → HTTP 401, never processed. A valid one → processed.
   - Tool dispatch (VOICE3): a verified tool-call webhook routes to
     app.tools.dispatch(name, **args) with validated args; an unknown tool → a
     structured error (no crash). A call-status webhook records a lifecycle event.
@@ -24,7 +24,6 @@ runtime entry point (`make serve` → uvicorn lifespan startup), never at import
 
 from __future__ import annotations
 
-import hashlib
 import hmac
 import json
 from contextlib import asynccontextmanager
@@ -37,34 +36,31 @@ from app.config import get_setting, load_env
 from app.consent import mask_phone
 from app.tools import dispatch
 
-# The header Vapi sends the HMAC signature in. The exact header/scheme is
-# confirmed at live integration (Stage 8); the verify function is isolated and
-# swappable so the GRADED behavior — reject-bad / accept-good — is what is tested.
-SIGNATURE_HEADER = "x-vapi-signature"
+# The header Vapi sends its server-message secret in. CONFIRMED at live
+# integration (2026-06-23): Vapi authenticates server/webhook requests with a
+# STATIC shared secret echoed in the `x-vapi-secret` header (set under the Vapi
+# dashboard Server → Authorization settings), NOT an HMAC signature. The verify
+# function is isolated/swappable so the GRADED behavior — reject-bad / accept-good,
+# fail-closed — is what is tested, independent of the exact provider scheme.
+SIGNATURE_HEADER = "x-vapi-secret"
 
 
 # ===========================================================================
-# Signature verification (VOICE2) — isolated + swappable
+# Webhook authentication (VOICE2) — isolated + swappable
 # ===========================================================================
 
-def _expected_signature(secret: str, raw_body: bytes) -> str:
-    """Compute the hex HMAC-SHA256 of *raw_body* under *secret* (the raw body)."""
-    return hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+def verify_secret(secret: str | None, provided: str | None) -> bool:
+    """Return True iff the inbound webhook secret matches our shared secret (VOICE2).
 
-
-def verify_signature(secret: str | None, raw_body: bytes, provided: str | None) -> bool:
-    """Return True iff *provided* matches the HMAC-SHA256 of *raw_body* (VOICE2).
-
-    Constant-time comparison (hmac.compare_digest) defeats timing attacks. A
-    missing secret (server misconfigured) or a missing/blank signature header
-    fails CLOSED — verification returns False, the request is rejected, never
-    processed. The signature may be sent bare or as 'sha256=<hex>'; both resolve.
+    Vapi sends the configured server secret verbatim in the `x-vapi-secret` header;
+    we compare it to VAPI_WEBHOOK_SECRET with a constant-time comparison
+    (hmac.compare_digest) to defeat timing attacks. A missing server secret (server
+    misconfigured) or a missing/blank header fails CLOSED — returns False, the
+    request is rejected (401), never processed.
     """
     if not secret or not provided:
         return False
-    candidate = provided.split("=", 1)[1] if provided.startswith("sha256=") else provided
-    expected = _expected_signature(secret, raw_body)
-    return hmac.compare_digest(candidate, expected)
+    return hmac.compare_digest(provided, secret)
 
 
 # ===========================================================================
@@ -99,7 +95,7 @@ def health() -> dict[str, str]:
 # ===========================================================================
 
 async def _verified_body(request: Request) -> tuple[bool, bytes, dict[str, Any]]:
-    """Read the raw body, verify its signature, and parse JSON.
+    """Read the raw body, verify the x-vapi-secret header, and parse JSON.
 
     Returns (ok, raw_body, payload). When ok is False the caller returns 401
     WITHOUT processing the payload (VOICE2). The secret is read lazily per request
@@ -108,7 +104,7 @@ async def _verified_body(request: Request) -> tuple[bool, bytes, dict[str, Any]]
     raw_body = await request.body()
     secret = get_setting("VAPI_WEBHOOK_SECRET")
     provided = request.headers.get(SIGNATURE_HEADER)
-    if not verify_signature(secret, raw_body, provided):
+    if not verify_secret(secret, provided):
         return False, raw_body, {}
     try:
         payload = json.loads(raw_body or b"{}")
@@ -164,9 +160,9 @@ def _extract_tool_call(payload: dict[str, Any]) -> tuple[str | None, dict[str, A
 
 @app.post("/webhook/tool")
 async def tool_webhook(request: Request) -> JSONResponse:
-    """Handle a signature-verified tool-call webhook (VOICE2 + VOICE3).
+    """Handle a secret-verified tool-call webhook (VOICE2 + VOICE3).
 
-    A bad/missing signature → 401 (never processed). A verified call routes to
+    A bad/missing secret → 401 (never processed). A verified call routes to
     app.tools.dispatch(name, **args); an unknown tool or bad args returns a
     STRUCTURED error (dispatch never raises across its boundary — §6), never a 500.
     """
@@ -197,7 +193,7 @@ async def tool_webhook(request: Request) -> JSONResponse:
 
 @app.post("/webhook/status")
 async def status_webhook(request: Request) -> JSONResponse:
-    """Handle a signature-verified call-status (lifecycle) webhook.
+    """Handle a secret-verified call-status (lifecycle) webhook.
 
     Records the lifecycle event and acknowledges. Any phone number in the payload
     is masked before it is echoed (LEAK2/SEC1 — a log line never carries a full

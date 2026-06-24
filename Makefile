@@ -8,7 +8,7 @@ PIP    := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
 UVICORN := $(VENV)/bin/uvicorn
 
-.PHONY: install test serve call
+.PHONY: install test serve call preflight
 
 ## install — create .venv and install all pinned deps
 install:
@@ -21,6 +21,12 @@ install:
 ## The "Restart & Run All" equivalent (CLAUDE.md §8).
 test:
 	$(PYTEST) tests/ -v
+
+## preflight — pre-live readiness check (no secret VALUE is ever printed)
+## Confirms required settings are present + the consent allowlist loads, then
+## prints a PASS/FAIL verdict. Run this before `make call`. Exit 0 = ready.
+preflight:
+	$(VENV)/bin/python scripts/preflight.py
 
 ## serve — start the FastAPI webhook server (no call placed, no live cost)
 ## Exercised from Stage 4 when app.server lands. Safe to run now: just boots.

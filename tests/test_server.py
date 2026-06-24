@@ -12,22 +12,15 @@ no real Vapi/OpenAI client, no call.
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 
 import pytest
 from fastapi.testclient import TestClient
 
 import app.server as server
-from app.server import app, verify_signature
+from app.server import app, verify_secret
 
 WEBHOOK_SECRET = "test-webhook-secret-abc123"
-
-
-def _sign(secret: str, raw: bytes) -> str:
-    """Compute the hex HMAC-SHA256 a valid client would send (mirrors the server)."""
-    return hmac.new(secret.encode("utf-8"), raw, hashlib.sha256).hexdigest()
 
 
 @pytest.fixture()
@@ -38,76 +31,67 @@ def client(monkeypatch) -> TestClient:
 
 
 def _post_signed(client: TestClient, path: str, payload: dict, *, secret: str):
-    """POST *payload* to *path* with a valid signature header for *secret*."""
+    """POST *payload* to *path* with the x-vapi-secret header set to *secret*."""
     raw = json.dumps(payload).encode("utf-8")
-    sig = _sign(secret, raw)
     return client.post(
         path,
         content=raw,
-        headers={"x-vapi-signature": sig, "content-type": "application/json"},
+        headers={"x-vapi-secret": secret, "content-type": "application/json"},
     )
 
 
 # ---------------------------------------------------------------------------
-# verify_signature unit (the isolated, swappable verify fn)
+# verify_secret unit (the isolated, swappable webhook-auth fn)
 # ---------------------------------------------------------------------------
 
-class TestVerifySignatureUnit:
-    """The signature verifier: reject-bad / accept-good, fails closed."""
+class TestVerifySecretUnit:
+    """The webhook-secret verifier: reject-bad / accept-good, fails closed."""
 
-    def test_valid_signature_accepts(self):
-        raw = b'{"a":1}'
-        assert verify_signature(WEBHOOK_SECRET, raw, _sign(WEBHOOK_SECRET, raw)) is True
+    def test_matching_secret_accepts(self):
+        assert verify_secret(WEBHOOK_SECRET, WEBHOOK_SECRET) is True
 
-    def test_bad_signature_rejects(self):
-        raw = b'{"a":1}'
-        assert verify_signature(WEBHOOK_SECRET, raw, "deadbeef") is False
+    def test_wrong_secret_rejects(self):
+        assert verify_secret(WEBHOOK_SECRET, "the-wrong-secret") is False
 
-    def test_missing_signature_rejects(self):
-        raw = b'{"a":1}'
-        assert verify_signature(WEBHOOK_SECRET, raw, None) is False
+    def test_missing_header_rejects(self):
+        assert verify_secret(WEBHOOK_SECRET, None) is False
 
-    def test_missing_secret_fails_closed(self):
+    def test_blank_header_rejects(self):
+        assert verify_secret(WEBHOOK_SECRET, "") is False
+
+    def test_missing_server_secret_fails_closed(self):
         """A missing server secret fails CLOSED (never silently accepts)."""
-        raw = b'{"a":1}'
-        assert verify_signature(None, raw, _sign(WEBHOOK_SECRET, raw)) is False
+        assert verify_secret(None, WEBHOOK_SECRET) is False
 
-    def test_sha256_prefixed_signature_accepts(self):
-        """A 'sha256=<hex>' prefixed signature resolves the same as bare hex."""
-        raw = b'{"a":1}'
-        sig = "sha256=" + _sign(WEBHOOK_SECRET, raw)
-        assert verify_signature(WEBHOOK_SECRET, raw, sig) is True
-
-    def test_tampered_body_rejects(self):
-        """A signature over a DIFFERENT body is rejected (HMAC binds to the raw body)."""
-        sig = _sign(WEBHOOK_SECRET, b'{"a":1}')
-        assert verify_signature(WEBHOOK_SECRET, b'{"a":2}', sig) is False
+    def test_near_miss_secret_rejected(self):
+        """A near-miss secret (differs by one char) is rejected (constant-time compare)."""
+        assert verify_secret(WEBHOOK_SECRET, WEBHOOK_SECRET[:-1] + "X") is False
 
 
 # ---------------------------------------------------------------------------
 # VOICE2 — webhook signature verification end-to-end
 # ---------------------------------------------------------------------------
 
-class TestVoice2WebhookSignature:
-    """VOICE2: bad/missing signature → 401; valid → processed."""
+class TestVoice2WebhookSecret:
+    """VOICE2: bad/missing x-vapi-secret → 401; correct → processed."""
 
-    def test_missing_signature_header_401(self, client):
-        """No signature header → 401, never processed."""
+    def test_missing_secret_header_401(self, client):
+        """No x-vapi-secret header → 401, never processed."""
         resp = client.post("/webhook/tool", json={"name": "end_call"})
         assert resp.status_code == 401
 
-    def test_bad_signature_401(self, client):
-        """A wrong signature → 401, never processed."""
+    def test_wrong_secret_header_401(self, client):
+        """A wrong x-vapi-secret value → 401, never processed."""
         raw = json.dumps({"name": "end_call"}).encode("utf-8")
         resp = client.post(
             "/webhook/tool",
             content=raw,
-            headers={"x-vapi-signature": "not-a-real-signature"},
+            headers={"x-vapi-secret": "not-the-real-secret"},
         )
         assert resp.status_code == 401
 
-    def test_valid_signature_processed(self, client):
-        """A correctly signed tool webhook is processed (200, structured result)."""
+    def test_correct_secret_processed(self, client):
+        """A correctly authenticated tool webhook is processed (200, structured result)."""
         resp = _post_signed(
             client, "/webhook/tool", {"name": "end_call", "arguments": {}},
             secret=WEBHOOK_SECRET,
@@ -115,8 +99,8 @@ class TestVoice2WebhookSignature:
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
 
-    def test_signature_over_wrong_secret_401(self, client):
-        """A signature computed with the WRONG secret → 401."""
+    def test_wrong_secret_value_401(self, client):
+        """A request carrying the WRONG secret → 401."""
         resp = _post_signed(
             client, "/webhook/tool", {"name": "end_call"},
             secret="the-wrong-secret",
@@ -124,7 +108,7 @@ class TestVoice2WebhookSignature:
         assert resp.status_code == 401
 
     def test_no_secret_configured_rejects(self, monkeypatch):
-        """With no VAPI_WEBHOOK_SECRET set, even a 'signed' request is rejected (fails closed)."""
+        """With no VAPI_WEBHOOK_SECRET set, even a 'correct' header is rejected (fails closed)."""
         monkeypatch.delenv("VAPI_WEBHOOK_SECRET", raising=False)
         local = TestClient(app)
         resp = _post_signed(
@@ -133,7 +117,7 @@ class TestVoice2WebhookSignature:
         assert resp.status_code == 401
 
     def test_status_webhook_also_verifies(self, client):
-        """The status webhook enforces the same signature gate (401 on bad sig)."""
+        """The status webhook enforces the same secret gate (401 on missing)."""
         resp = client.post("/webhook/status", json={"status": "ended"})
         assert resp.status_code == 401
 

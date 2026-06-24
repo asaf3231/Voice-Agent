@@ -147,6 +147,11 @@ def main(argv: list[str] | None = None, *, provider=None) -> int:
         )
         return 1
 
+    # Ensure the repo root is importable when run directly — OS-agnostic via pathlib.
+    repo_root = str(Path(__file__).resolve().parent.parent)
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+
     # -- load .env (live entry point; never at import -- ENV4) ----------------
     from app.config import load_env
     load_env()

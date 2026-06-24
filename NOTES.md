@@ -572,3 +572,32 @@ the residual High is an accepted, documented operating constraint, not a code de
 pitch, book a real meeting), `LIVE3`/`SEC5` cost reconciliation from receipts, and the Stage-4 public-tunnel signed-webhook
 smoke test. These need the real `.env` + Asaf running `make call` to the 3 consented numbers — **the PM will not place live
 calls autonomously.**
+
+### 2026-06-23 — Live-readiness prep: webhook-auth reconciliation + preflight + runbook/storyboard  *(PM-verified)*
+**Asaf completed external setup:** Twilio Israeli number `+972 53-563-6788` imported into Vapi; `.env` aligned
+(`CALCOM_API_KEY`, `CALCOM_EVENT_TYPE_ID`, `VAPI_PHONE_NUMBER_ID`); set an **`x-vapi-secret`** header in the Vapi
+dashboard (Server → Authorization); `consent_allowlist.json` prepared with the 3 consented numbers.
+**Webhook auth reconciled (VOICE2 graded contract — CONFIRMED live scheme):** Vapi authenticates server messages with a
+**static shared secret** in the `x-vapi-secret` header, NOT HMAC. `server.py` `verify_signature` (HMAC over raw body,
+`x-vapi-signature`) → **`verify_secret`** (constant-time `hmac.compare_digest` of the `x-vapi-secret` header vs
+`VAPI_WEBHOOK_SECRET`, fail-closed). This was the pre-flagged "live reconciliation" the isolated verify fn existed for —
+the graded behavior (reject-bad/accept-good, 401-never-processed, both routes gated) is preserved + tested. Removed the
+dead `hashlib`/`_expected_signature`; updated `tests/test_server.py` to the static-secret scheme. **Without this, every
+real Vapi webhook would 401 → no tool calls → no booking; this was a live blocker.**
+**Preflight built (Asaf ask #1):** `scripts/preflight.py` + `make preflight` + `tests/test_preflight.py` — confirms the 5
+required settings are present + the consent allowlist loads, prints **names + PRESENT/MISSING + spend totals only, never a
+secret value** (test-asserted). Also fixed a real bug: the scripts (`preflight`/`place_demo_call`/`capture_receipts`)
+couldn't `import app` when run directly (`make call`/`make preflight` failed) — added an in-`main()` repo-root `sys.path`
+bootstrap (OS-agnostic, no import-time side effect).
+**Docs (Asaf ask #2):** `docs/LIVE_RUNBOOK.md` (preconditions → preflight → serve+tunnel+smoke test → sequential
+`make call` → capture receipts → failure modes) and `docs/STAGE9_STORYBOARD.md` (architecture → governance → live
+booking → eval numbers → receipts ≤ $50).
+**Independent security review (corrected process — VOICE2 is the security contract): VERDICT APPROVE.** Re-confirmed
+`verify_secret` fail-closed + constant-time + no bypass + both routes gated + HMAC fully removed + preflight prints no
+secret + the script bootstraps are import-safe. 3 minor findings, **all PM-fixed:** stale HMAC docstrings → corrected;
+the test phone `+972…` → canonical fictitious `+1555…`; the no-leak test strengthened (asserts names present AND values
+absent). Suite **419 green**.
+**⚠ Preflight caught 2 real gaps in Asaf's local setup (surfaced — these are .env/allowlist, not code):**
+(1) `VAPI_WEBHOOK_SECRET` reads as **MISSING** (likely still commented / misnamed / spaces around `=`); (2) the consent
+allowlist isn't found at the repo-root default path (place `consent_allowlist.json` at the root or set
+`CONSENT_ALLOWLIST_PATH`). **`make preflight` must say PASSED before any live call.**
