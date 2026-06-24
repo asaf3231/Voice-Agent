@@ -51,6 +51,18 @@ class TestVoice1AssistantConfig:
         assert assistant["stopSpeakingPlan"]["numWords"] >= 2
         assert "startSpeakingPlan" in assistant
 
+    def test_tools_carry_server_url_when_public_url_set(self, monkeypatch):
+        """Each tool must carry server.url so Vapi knows WHERE to POST the invocation.
+        Without it every tool returns 'No result returned' (live booking fix 2026-06-24).
+        """
+        monkeypatch.setenv("PUBLIC_WEBHOOK_URL", "https://example.ngrok-free.dev")
+        a = VapiVoiceProvider().configure_assistant()
+        tools = a["model"]["tools"]
+        assert tools and all(
+            t.get("server", {}).get("url") == "https://example.ngrok-free.dev/webhook/tool"
+            for t in tools
+        )
+
     def test_system_prompt_present_and_grounded(self, assistant):
         """A non-empty system prompt is wired, grounded in the value-prop content."""
         messages = assistant["model"]["messages"]

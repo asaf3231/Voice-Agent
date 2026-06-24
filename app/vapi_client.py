@@ -36,6 +36,7 @@ from app.config import (
     DISCLOSURE_LINE,
     MAX_CALL_DURATION_S,
     REALTIME_MODEL,
+    get_setting,
     require_setting,
 )
 from app.persona import build_system_prompt, load_value_prop
@@ -126,7 +127,7 @@ class VoiceProvider(Protocol):
 # Tool/function JSON-schema definitions (names == AGENT_TOOLS — VOICE1)
 # ===========================================================================
 
-def _tool_schemas() -> list[dict[str, Any]]:
+def _tool_schemas(server_url: str | None = None) -> list[dict[str, Any]]:
     """Return the 5 tool/function definitions for the assistant payload.
 
     Each function's `name` is exactly its AGENT_TOOLS entry (the dispatch key the
@@ -134,6 +135,10 @@ def _tool_schemas() -> list[dict[str, Any]]:
     the keyword params of the matching app.tools function. Built fresh each call
     (a pure value); a closing assert proves the names equal AGENT_TOOLS so a drift
     fails loudly, not silently at call time.
+
+    If *server_url* is given, each tool carries `server.url` = that URL so Vapi
+    knows WHERE to POST the tool invocation. Without it, Vapi has no address and
+    every tool returns "No result returned" (the live booking failure 2026-06-24).
     """
     schemas: list[dict[str, Any]] = [
         {
@@ -243,6 +248,11 @@ def _tool_schemas() -> list[dict[str, Any]]:
         },
     ]
 
+    # Tell Vapi WHERE to send each tool invocation (else "No result returned").
+    if server_url:
+        for s in schemas:
+            s["server"] = {"url": server_url}
+
     # Guard: the function names MUST equal AGENT_TOOLS exactly (the dispatch keys).
     names = [s["function"]["name"] for s in schemas]
     assert names == AGENT_TOOLS, (
@@ -285,6 +295,12 @@ class VapiVoiceProvider:
         vp = load_value_prop(value_prop_path)
         system_prompt = build_system_prompt(variant, vp)
 
+        # Tool server URL: Vapi POSTs each tool invocation here. Derived from
+        # PUBLIC_WEBHOOK_URL (the public tunnel/host) + the /webhook/tool route.
+        # Without it Vapi has no address → "No result returned" on every tool.
+        public_base = (get_setting("PUBLIC_WEBHOOK_URL") or "").rstrip("/")
+        tool_server_url = f"{public_base}/webhook/tool" if public_base else None
+
         return {
             # The OpenAI Realtime model is configured INSIDE the platform; we name
             # the exact pinned id so the assistant uses the locked engine (ENV2).
@@ -294,7 +310,7 @@ class VapiVoiceProvider:
                 "messages": [
                     {"role": "system", "content": system_prompt},
                 ],
-                "tools": _tool_schemas(),
+                "tools": _tool_schemas(tool_server_url),
             },
             # CHOKEPOINT (VOICE1/CON2/Finding 4): the disclosure is the platform's
             # static first message — spoken VERBATIM by the platform, byte-exact,
