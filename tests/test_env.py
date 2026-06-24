@@ -225,7 +225,7 @@ class TestEnv4ImportSafety:
         from app.config import DISCLOSURE_LINE
         expected = (
             "Hi, this is Aria, an AI assistant calling on behalf of Alta. "
-            "This call may be recorded for quality. Do you have a quick minute?"
+            "Do you have a quick minute?"
         )
         assert DISCLOSURE_LINE == expected, (
             f"DISCLOSURE_LINE mismatch!\n"
@@ -245,14 +245,13 @@ class TestEnv4ImportSafety:
         )
 
     def test_agent_tools_identity(self):
-        """AGENT_TOOLS has 5 entries matching the spec (CLAUDE.md §9)."""
+        """AGENT_TOOLS has 4 entries matching the spec (CLAUDE.md §9)."""
         from app.config import AGENT_TOOLS
         expected = [
             "check_availability",
             "book_meeting",
             "log_disposition",
             "detect_voicemail",
-            "end_call",
         ]
         assert AGENT_TOOLS == expected, (
             f"AGENT_TOOLS mismatch:\n  Got:      {AGENT_TOOLS}\n  Expected: {expected}"

@@ -32,6 +32,9 @@ __pycache__/
 briefs/
 handbacks/
 
+# --- unrelated local material (NOT part of this project — never commit) ---
+llm course/
+
 # --- Claude Code local settings (may contain user-specific config) ---
 .claude/settings.local.json
 

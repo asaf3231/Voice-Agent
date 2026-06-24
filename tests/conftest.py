@@ -162,12 +162,13 @@ class FakeVoiceProvider:
         *,
         variant: str = "A",
         value_prop_path: str | None = None,
+        lead: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Build the assistant payload via the real (offline, pure) Vapi builder."""
         from app.vapi_client import VapiVoiceProvider
 
         return VapiVoiceProvider().configure_assistant(
-            variant=variant, value_prop_path=value_prop_path
+            variant=variant, value_prop_path=value_prop_path, lead=lead
         )
 
     def place_call(

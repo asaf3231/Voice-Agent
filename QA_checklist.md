@@ -56,7 +56,7 @@ Maintained by: Asaf
 |---|---|---|
 | `CON1` | Allowlist gate | `consent_allows(number)` True only for allowlisted numbers; a non-allowlisted number is refused with a structured result and **never** reaches `place_call` (spy). **Allowlist source validates on load** (analogous to `LEAD1`): a malformed/empty allowlist is a clean explicit error, not silent allow-none. **Both entry points gated** — `orchestrate.py` *and* `scripts/place_demo_call.py` are spy-proven to pass through `consent_allows` before `place_call` |
 | `CON2` | **Disclosure first, byte-exact** | the first utterance on every call equals `DISCLOSURE_LINE` byte-for-byte; pinned to the platform's **static first-message** feature (spoken verbatim, **not** a prompt instruction the Realtime model could paraphrase); asserted byte-exact in the assistant config (`VOICE1`) + the offline conversation eval, and verified from the real transcript live (`LIVE2`) |
-| `CON3` | Recording gated on disclosure | recording is enabled only when `DISCLOSURE_LINE` is delivered; no disclosure ⇒ no recording |
+| `CON3` | Recording enabled with the disclosure payload | `recordingEnabled: True` ships in the **same static-first-message payload** as `DISCLOSURE_LINE` (the AI disclosure). **Decision 2026-06-24 (Asaf):** the spoken *recording notice* was dropped from `DISCLOSURE_LINE` (AI self-id retained); recording stays **on**. Lawful for the **one-party-consent** consented test line; a recording notice **must be restored before any two-party-consent / real-prospect use** |
 | `CON4` | No live call at import / in default suite | `ENV4` cross-check + a grep/spy: the default `pytest` run places zero live calls (provider is always the fake) |
 | `CON5` | `do_not_call` honored | a `do_not_call=True` lead is suppressed from the campaign regardless of fit |
 
@@ -176,6 +176,43 @@ Driven by `SimulatedCallee` + `FakeVoiceProvider`, fully offline.
 
 ---
 
+## §12. Adversarial / load stress suite (`STR-*`) — Stage 8.5
+
+The 100+-parallel tester-fleet blueprint. Full definitions + the exact mock
+scenario/persona per case live in `docs/STRESS_TEST_ARCHITECTURE.md`. Each row is
+tagged by execution tier: **OFFLINE** (deterministic harness, $0, where the fleet
+fans out), **MOCK** (the local fault-injection bridge over the webhook+transcript
+layer — `app/testing/mock_bridge.py`), **LIVE** (the bounded, sequential, gated
+stress lane — `scripts/stress_live.py`). Implemented rows are runnable in `make test`.
+
+| ID | Tier | Check | Pass condition |
+|---|---|---|---|
+| `STR-L1` | OFFLINE | Turn-cap hardness | every persona under a tight cap ends with `FAILSAFE_HANGUP_LINE` byte-exact; no turn past the cap |
+| `STR-L2` | OFFLINE | Context overflow | a 200KB value-prop loads, disclosure stays first, no crash, compliance holds |
+| `STR-L4/5` | OFFLINE | Prompt-injection / exfil | an INJECTION callee never makes the agent leak a secret/system-prompt or invent a claim |
+| `STR-L7` | OFFLINE | Booking integrity | a voiced booking without a `booked=True` turn fails compliance (no phantom) |
+| `STR-L9` | OFFLINE | Adversarial tool args | `tools.dispatch` returns structured errors for unknown tool / bad slot / missing lead_id / bad tz / extra kwargs — never a crash |
+| `STR-L11` | OFFLINE | Slot re-offer (Bug 1) | `slot_reoffer_handled` is True on a re-offer, False on a collapse; the end-to-end runner guard is `xfail` until the re-offer loop lands |
+| `STR-L14` | OFFLINE | Unicode / smart quotes | a unicode value-prop never drifts the graded literals; no failsafe drift |
+| `STR-T2/T3` | MOCK | Lossy / noisy transcript | total loss → no false voicemail; a cue in noise still classifies |
+| `STR-T5` | MOCK | Drop mid-call / empty envelope | structured `no_tool_call` / masked status ack, never a 500 |
+| `STR-T6` | MOCK | Voicemail detect | greeting → leave ≤ `VOICEMAIL_MAX_S` then end; a human is not flagged |
+| `STR-T8` | MOCK | Redelivery storm | the same tool webhook posted N× books exactly once (idempotent) |
+| `STR-T9` | MOCK | Malformed envelopes | missing toolCallId / garbled args / flat form → structured result, no crash |
+| `STR-T10` | MOCK | Disclosure pinned first | the assistant payload's static first-message == `DISCLOSURE_LINE` (offline proxy for `LIVE2`) |
+| `STR-T1` | LIVE | Real barge-in | (gated) `interrupted` count from `scripts/inspect_call.py` on a live call |
+| `STR-P1` | MOCK | Webhook TTFB | p95 of the compute-path tool webhook < the SLO (proposed 500ms) |
+| `STR-P3` | MOCK | STT resilience | garbled human speech does not false-trigger voicemail |
+| `STR-P5` | OFFLINE | Slow/failing backend | a timing-out calendar → structured `calendar_error`; a backend error → no phantom booking |
+| `STR-C1` | OFFLINE | Sequential budget guard | recording to the hard cap makes the next dial refused (the guard is sound when used sequentially) |
+| `STR-C2` | OFFLINE | Consent under concurrency | the stateless gate is consistent across 100 concurrent checks |
+| `STR-C3` | OFFLINE | Booking idempotency | sequential repeats converge to one id; concurrent never crashes (Cal.com 409 is the cross-process guard) |
+| `STR-C6` | OFFLINE | Session isolation | distinct leads do not bleed slot ownership / dispatch lead_id |
+| `STR-C7` | OFFLINE | Cross-process budget TOCTOU | two ledgers on one state file under-count cumulative — the documented limitation that makes the live lane SEQUENTIAL |
+| `STR-LIVE` | LIVE | Stress-lane gating | (offline-proven) the lane halts at `MAX_LIVE_STRESS_CALLS` and the $15 reserve, and refuses non-consented numbers — spy-proven no dial past a gate |
+
+---
+
 ## Check-to-stage map (sanity)
 
 | Stage | Checks |
@@ -189,4 +226,5 @@ Driven by `SimulatedCallee` + `FakeVoiceProvider`, fully offline.
 | 6 offline eval harness | `EVAL1`–`EVAL6` |
 | 7 anti-leakage + packaging | `LEAK1`–`LEAK5`, `PKG1`–`PKG4` |
 | 8 live calling (lean) | `LIVE0` (readiness gate), `LIVE1`–`LIVE4`, `SEC5` |
+| 8.5 adversarial / load hardening | `STR-L*`, `STR-T*`, `STR-P*`, `STR-C*`, `STR-LIVE` (§12) |
 | 9 video + demo | `VID1`–`VID3` |

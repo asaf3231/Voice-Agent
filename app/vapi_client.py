@@ -34,24 +34,31 @@ from typing import Any, Protocol, runtime_checkable
 from app.config import (
     AGENT_TOOLS,
     DISCLOSURE_LINE,
+    END_CALL_MESSAGE,
     LLM_MODEL,
     MAX_CALL_DURATION_S,
     TRANSCRIBER_MODEL,
     TRANSCRIBER_PROVIDER,
     TTS_PROVIDER,
     TTS_VOICE_ID,
+    get_lead_context,
     get_setting,
     require_setting,
 )
 from app.persona import build_system_prompt, load_value_prop
 
-# Turn-taking tuning (Vapi-specific knobs, NOT §9 governance) so brief backchannels
-# ("okay", "mm-hm") and line noise don't cut Aria off mid-sentence — the live
-# "fragmented voice" issue (2026-06-24). `numWords=3` ⇒ the caller must say 3+ words
-# before the agent stops; `backoffSeconds` ⇒ pause before resuming after a real
-# interruption; `waitSeconds` ⇒ how long to wait after the caller stops before speaking.
+# Turn-taking + pacing tuning (Vapi-specific knobs, NOT §9 governance).
+#  stopSpeakingPlan: brief backchannels ("okay", "mm-hm") / line noise must not cut
+#    Aria off mid-sentence — `numWords=3` ⇒ the caller must say 3+ words before she
+#    stops; `backoffSeconds` ⇒ pause before resuming after a real interruption.
+#  startSpeakingPlan.waitSeconds: how long to wait after the caller stops before Aria
+#    replies — lowered 0.6→0.4→0.3 to cut the response lag (Asaf live reviews 2026-06-24).
+#  _TTS_SPEED: OpenAI-TTS playback rate (1.0 = normal). 1.1 ⇒ slightly faster than
+#    normal — 1.2 was a touch too fast on the live call (Asaf review 2026-06-24).
+#    Tunable; Vapi range 0.25–4.0.
 _STOP_SPEAKING_PLAN = {"numWords": 3, "voiceSeconds": 0.3, "backoffSeconds": 1.5}
-_START_SPEAKING_PLAN = {"waitSeconds": 0.6}
+_START_SPEAKING_PLAN = {"waitSeconds": 0.3}
+_TTS_SPEED = 1.1
 
 
 # ===========================================================================
@@ -155,17 +162,14 @@ def _tool_schemas(
             "function": {
                 "name": "check_availability",
                 "description": (
-                    "Return free meeting slots in the lookahead window, resolved to "
-                    "the lead's timezone. Call before proposing a slot."
+                    "Return free meeting slots in the lookahead window, in the lead's "
+                    "timezone. Call this BEFORE proposing any time. Offer the returned "
+                    "`say` strings to the prospect VERBATIM — never compute or reword "
+                    "dates/times yourself."
                 ),
                 "parameters": {
                     "type": "object",
-                    "properties": {
-                        "lead_timezone": {
-                            "type": "string",
-                            "description": "IANA tz of the lead, e.g. 'America/New_York'.",
-                        },
-                    },
+                    "properties": {},
                     "required": [],
                 },
             },
@@ -181,17 +185,16 @@ def _tool_schemas(
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "lead_id": {"type": "string", "description": "The lead's id."},
                         "slot_start_iso": {
                             "type": "string",
-                            "description": "ISO-8601 start time of the chosen free slot.",
+                            "description": "The chosen slot's slot_key/start_utc from check_availability.",
                         },
                         "summary": {
                             "type": "string",
                             "description": "Optional meeting title.",
                         },
                     },
-                    "required": ["lead_id", "slot_start_iso"],
+                    "required": ["slot_start_iso"],
                 },
             },
         },
@@ -206,18 +209,16 @@ def _tool_schemas(
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "lead_id": {"type": "string"},
                         "disposition": {
                             "type": "string",
                             "enum": [
                                 "booked", "declined", "no_answer", "voicemail", "error",
                             ],
                         },
-                        "phone_e164": {"type": "string"},
                         "event_id": {"type": "string"},
                         "notes": {"type": "string"},
                     },
-                    "required": ["lead_id", "disposition"],
+                    "required": ["disposition"],
                 },
             },
         },
@@ -238,20 +239,6 @@ def _tool_schemas(
                         },
                     },
                     "required": ["transcript"],
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "end_call",
-                "description": "Hang up cleanly with a structured reason.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "reason": {"type": "string"},
-                    },
-                    "required": [],
                 },
             },
         },
@@ -296,6 +283,7 @@ class VapiVoiceProvider:
         *,
         variant: str = "A",
         value_prop_path: str | None = None,
+        lead: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Build the Vapi assistant payload (VOICE1 / CON2 / CON3).
 
@@ -307,6 +295,15 @@ class VapiVoiceProvider:
         """
         vp = load_value_prop(value_prop_path)
         system_prompt = build_system_prompt(variant, vp)
+
+        # Authoritative lead context → assistant metadata. Sourced from the lead
+        # record if supplied, else from the env-backed get_lead_context() so the
+        # webhook can recover the same values (D2/D3 — the model never supplies them).
+        if lead is not None:
+            lead_id = lead.get("lead_id") or lead.get("id")
+            lead_timezone = lead.get("timezone") or lead.get("lead_timezone")
+        else:
+            lead_id, lead_timezone = get_lead_context()
 
         # Tool server URL: Vapi POSTs each tool invocation here. Derived from
         # PUBLIC_WEBHOOK_URL (the public tunnel/host) + the /webhook/tool route.
@@ -329,7 +326,7 @@ class VapiVoiceProvider:
                 ],
                 "tools": _tool_schemas(tool_server_url, tool_server_secret),
             },
-            "voice": {"provider": TTS_PROVIDER, "voiceId": TTS_VOICE_ID},
+            "voice": {"provider": TTS_PROVIDER, "voiceId": TTS_VOICE_ID, "speed": _TTS_SPEED},
             "transcriber": {
                 "provider": TRANSCRIBER_PROVIDER,
                 "model": TRANSCRIBER_MODEL,
@@ -340,17 +337,36 @@ class VapiVoiceProvider:
             # never model-generated. Consumed from config (DISCLOSURE_LINE).
             "firstMessage": DISCLOSURE_LINE,
             "firstMessageMode": "assistant-speaks-first",
-            # CON3: recording is enabled ONLY together with the disclosure. The
-            # disclosure (above) is always present in this payload, so recording is
-            # gated on the same payload that carries the verbatim recorded-disclosure.
+            # CON3 (updated 2026-06-24, Asaf): recording stays ON and ships in the
+            # same payload as the verbatim AI disclosure (firstMessage above). The
+            # spoken *recording notice* was dropped from DISCLOSURE_LINE — recording
+            # without a spoken notice is lawful only for the one-party-consent
+            # consented test line; restore a notice before two-party-consent use.
             "recordingEnabled": True,
+            # CLEAN HANGUP (D9/D4/D5, 2026-06-24): pin termination to the PLATFORM.
+            # endCallFunctionEnabled lets a decision-to-end ACTUALLY hang up (a custom
+            # end_call tool returned JSON but never terminated → the agent rambled past
+            # "goodbye"; that tool is retired). END_CALL_MESSAGE is the byte-exact close
+            # spoken BY Vapi — neutral so it fits a booking and a decline, never drifts
+            # or doubles, and there is no "after goodbye" to ramble into. (Exact Vapi
+            # field semantics are a live-reconcile item — verified by the live test,
+            # like x-vapi-secret / the model id / the tool-result envelope.)
+            "endCallFunctionEnabled": True,
+            "endCallMessage": END_CALL_MESSAGE,
             # Anti-loop / cost guard mirrors the wall-clock cap (§9).
             "maxDurationSeconds": MAX_CALL_DURATION_S,
             # Turn-taking so brief backchannels don't fragment the agent's speech
             # (live "fragmented voice" fix 2026-06-24).
             "stopSpeakingPlan": _STOP_SPEAKING_PLAN,
             "startSpeakingPlan": _START_SPEAKING_PLAN,
-            "metadata": {"variant": variant},
+            # Only include lead keys when set — a None would serialize as JSON null,
+            # which Vapi may reject (metadata values are expected to be strings) and
+            # the webhook recovers either value from the env anyway (extract_lead_context).
+            "metadata": {
+                "variant": variant,
+                **({"lead_id": lead_id} if lead_id else {}),
+                **({"lead_timezone": lead_timezone} if lead_timezone else {}),
+            },
         }
 
     # -- live outbound (lazy client only — ENV4) ------------------------------
@@ -417,6 +433,27 @@ class VapiVoiceProvider:
             return CostResult(ok=True, cost_usd=float(raw_cost))
         except Exception as exc:  # noqa: BLE001 — surface as data (§6)
             return CostResult(ok=False, error="vapi_error", message=str(exc))
+
+    def fetch_call(self, *, call_id: str) -> dict[str, Any]:
+        """Return the full Vapi call object for *call_id* (live, read-only).
+
+        Used by diagnostic tooling (scripts/inspect_call.py) to render the
+        timestamped transcript + interruption flags when debugging the live
+        call experience. This is a read-only helper on the concrete Vapi
+        adapter ONLY — it is NOT part of the graded VoiceProvider interface
+        (the 3 graded methods configure_assistant/place_call/fetch_call_cost
+        are unchanged), so it does not widen the provider seam.
+
+        Raises RuntimeError with the response body on a non-2xx so the caller
+        sees the actionable reason; the diagnostic script catches + prints it.
+        """
+        client = _get_vapi()
+        resp = client.get(f"/call/{call_id}")
+        if resp.status_code >= 400:
+            raise RuntimeError(
+                f"HTTP {resp.status_code} from Vapi /call/{call_id}: {resp.text[:2000]}"
+            )
+        return resp.json()
 
 
 # ===========================================================================

@@ -42,13 +42,23 @@ class Stage(str, Enum):
 
 
 class Persona(str, Enum):
-    """The offline simulated-callee personas (EVAL4)."""
+    """The offline simulated-callee personas.
+
+    The first five are the graded EVAL4 matrix (fixed in bakeoff.PERSONA_MATRIX).
+    The trailing two are ADVERSARIAL personas for the stress suite (STR-L*); they
+    are deliberately NOT in PERSONA_MATRIX, so adding them does not change the
+    graded bake-off / eval numbers. The simulated-callee reply tables fall back to
+    a generic ack for any persona they don't script, so adding members is safe.
+    """
 
     COOPERATIVE = "cooperative"
     OBJECTING = "objecting"
     NO_ANSWER = "no_answer"
     VOICEMAIL = "voicemail"
     PROBING = "probing"
+    # --- adversarial / stress personas (STR-L*; not in the graded matrix) ---
+    INJECTION = "injection"        # prompt-injection / secret-exfil / policy-break attempts
+    SLOT_REJECTER = "slot_rejecter"  # wants the meeting, rejects the first offered TIME (Bug 1)
 
 
 class Disposition(str, Enum):

@@ -58,6 +58,14 @@ class TestVoice1AssistantConfig:
         assert assistant["stopSpeakingPlan"]["numWords"] >= 2
         assert "startSpeakingPlan" in assistant
 
+    def test_pacing_tuned_faster(self, assistant):
+        """Pacing tuned from the live review (2026-06-24): faster TTS playback and a
+        shorter post-caller wait so the agent isn't slow/tiring. Tunable knobs."""
+        # Faster speech: OpenAI-TTS speed bumped above 1.0.
+        assert assistant["voice"]["speed"] > 1.0
+        # Snappier reply: shorter wait after the caller stops talking.
+        assert assistant["startSpeakingPlan"]["waitSeconds"] <= 0.5
+
     def test_tools_carry_server_url_and_secret_when_configured(self, monkeypatch):
         """Each tool must carry server.url (WHERE to POST → else 'No result returned')
         AND server.secret (the x-vapi-secret Vapi echoes → else our webhook 401s and
@@ -86,7 +94,7 @@ class TestVoice1AssistantConfig:
         tools = assistant["model"]["tools"]
         names = [t["function"]["name"] for t in tools]
         assert names == AGENT_TOOLS
-        assert len(names) == 5
+        assert len(names) == 4
 
     def test_each_tool_has_a_json_schema(self, assistant):
         """Every tool definition carries a JSON-schema parameters object."""
@@ -97,13 +105,15 @@ class TestVoice1AssistantConfig:
             assert params["type"] == "object"
             assert "properties" in params
 
-    def test_book_meeting_requires_lead_and_slot(self, assistant):
-        """book_meeting's schema requires lead_id + slot_start_iso (mirrors the tool)."""
+    def test_book_meeting_requires_only_slot_not_lead_id(self, assistant):
+        """book_meeting's schema requires ONLY slot_start_iso — lead_id is injected
+        authoritatively at the chokepoint (D3), so the model never supplies it."""
         book = next(
             t["function"] for t in assistant["model"]["tools"]
             if t["function"]["name"] == "book_meeting"
         )
-        assert set(book["parameters"]["required"]) == {"lead_id", "slot_start_iso"}
+        assert set(book["parameters"]["required"]) == {"slot_start_iso"}
+        assert "lead_id" not in book["parameters"]["properties"]
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +135,7 @@ class TestCon2DisclosureFirstMessage:
         # And it is the exact CLAUDE.md §9 literal.
         expected = (
             "Hi, this is Aria, an AI assistant calling on behalf of Alta. "
-            "This call may be recorded for quality. Do you have a quick minute?"
+            "Do you have a quick minute?"
         )
         assert assistant["firstMessage"] == expected
 
@@ -144,12 +154,33 @@ class TestCon2DisclosureFirstMessage:
 # ---------------------------------------------------------------------------
 
 class TestCon3RecordingGatedOnDisclosure:
-    """CON3: recording is enabled only together with the recorded-disclosure."""
+    """CON3 (updated 2026-06-24): recording is enabled in the same payload as the
+    AI disclosure. The spoken recording notice was dropped; recordingEnabled stays True."""
 
     def test_recording_enabled_with_disclosure(self, assistant):
-        """recordingEnabled is True and the verbatim disclosure is present in the same payload."""
+        """recordingEnabled is True and the verbatim AI disclosure is present in the same payload."""
         assert assistant["recordingEnabled"] is True
         assert assistant["firstMessage"] == DISCLOSURE_LINE
+
+
+# ---------------------------------------------------------------------------
+# Step 1 (D9/D4/D5) — the hangup + close are pinned to the Vapi PLATFORM, not
+# model-generated: native end-call (actually hangs up) + a byte-exact endCallMessage
+# (so the goodbye can't drift/double, and there is no "after goodbye" to ramble into).
+# ---------------------------------------------------------------------------
+
+class TestCleanHangup:
+    def test_native_end_call_enabled(self, assistant):
+        """Vapi's native end-call is enabled so a decision to end ACTUALLY hangs up
+        (the custom end_call tool returned JSON but never terminated — D9)."""
+        assert assistant["endCallFunctionEnabled"] is True
+
+    def test_end_call_message_is_neutral_close_byte_exact(self, assistant):
+        """The closing line is spoken by the platform, byte-exact from config — never
+        model-generated (which drifted/doubled live — D4/D5). Neutral so it fits a
+        booking and a decline alike."""
+        from app.config import END_CALL_MESSAGE
+        assert assistant["endCallMessage"] == END_CALL_MESSAGE
 
 
 # ---------------------------------------------------------------------------

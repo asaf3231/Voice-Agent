@@ -550,3 +550,182 @@ disclosure-first call that pitches + books (`LIVE1`/`LIVE2`); `capture_receipts.
 Watch out for / open: **cross-process budget-ledger limitation → run live calls SEQUENTIALLY**; the live Vapi signature
 header/payload field names + Cal.com 409-only idempotency still need live reconciliation; keep a recorded call as the
 Stage-9 fallback; verify `DISCLOSURE_LINE` byte-exact from the REAL transcript (`LIVE2`), never assumed.
+
+## 2026-06-24 12:00 — [VOICE] SESSION END / HANDOFF (Stage 8 LIVE-debugging day → fresh PM requested)
+**Asaf is starting a fresh PM.** This entry + the chat brief are the cold-start context. Read order unchanged
+(`PM_Methodology_Prompt` → this latest entry → `CLAUDE.md` → `PLAN.md` → `QA_checklist.md` → `NOTES.md` → `ORCHESTRATION.md`).
+**Where we are:** Stages 0–7 ✅ committed; Stage 8 **build-half ✅**; now deep in **Stage 8 live calling** — the offline
+system is complete (**425 tests green**, tree clean, latest commit `54031b6`); iterating on the live phone-call experience.
+**Live-debugging chain fixed today (all committed, each verified):** (1) `REALTIME_MODEL` reconciled (`7031869`); (2)
+webhook auth → Vapi's static `x-vapi-secret` (`fc09914`); (3) Vapi tool-result **envelope** `{"results":[{toolCallId,result}]}`
+(`a7f8623`); (4) **Cal.com v1→v2** migration, v1 was 410-decommissioned (`993c30e`); (5) **slot cap** 239→5, the 49KB
+payload broke the webhook (`cfaa19f`/`39cc7aa`); (6) tool **`server.url`** from `PUBLIC_WEBHOOK_URL` (`226a46b`); (7) tool
+**`server.secret`** (`e12dd21`); (8) turn-taking (`fec3c71`); (9) **OQ-VOICE-1 REVISED: realtime → standard pipeline**
+gpt-4o + OpenAI-TTS(shimmer) + Deepgram (`54031b6`). Each independent-reviewed or live-verified.
+**Verified facts (PM-run / live):** tool path works **directly against live Cal.com** — `check_availability` → real slots,
+`book_meeting` → created + cancelled a real event; webhook chain verified local+public (envelope + 401 on bad secret);
+standard pipeline confirmed live (Vapi ran gpt-4o/shimmer/deepgram).
+**⚠ OPEN / WATCH (next PM — focus here):**
+1. **Call experience still unsatisfactory** — Asaf: "it sucked." He has NOT yet named the exact fault; I asked (audio
+   quality / voice / latency / pausing). **Get the specific complaint (or listen to the call recording) BEFORE changing
+   more.** Recording URL is on each call via the Vapi API (`GET /call/{id}` → `recordingUrl`). I cannot hear audio — depend
+   on Asaf's ear or the recording.
+2. **No full live booking completed yet (LIVE1 unmet)** — tools work, but Asaf keeps hanging up over the audio, so no
+   phone call has run through to a booked meeting.
+3. **🔴 LIVE-CALL CAP HIT:** the persistent ledger shows `live_call_count = 6/6` (`MAX_LIVE_CALLS`) so the **next `make
+   call` will be REFUSED** by `budget_permits(is_live=True)`. And `cumulative_usd = $0.00` is WRONG — the cost-recording
+   bug (`place_demo_call` records cost the instant Vapi *accepts* the call, before Vapi finalizes it → 0). **Real spend
+   ≈ $2** (sum the per-call `cost` from `GET /call`). **Action before more live calls:** reset the persistent ledger
+   (`receipts/.budget_ledger.json`; `budget.reset_ledger(also_delete_state_file=True)`) AND fix cost capture
+   (record post-call via `scripts/capture_receipts.py` + reconcile into the ledger, or don't trust an immediate `cost=0`).
+4. **DO NOT re-raise "Ulta" pronunciation** — Asaf explicitly dropped it ("I don't care"). Leave it.
+5. Minor: Cal.com event type is **15 min** vs `BOOKING_SLOT_MINUTES=30` (align Cal.com or §9); the model guesses a US tz
+   for `lead_timezone` (Asaf is **Asia/Jerusalem**) — affects only how times are voiced.
+**Live setup (Asaf-owned):** Twilio **+972 53-563-6788** imported in Vapi; ngrok reserved domain
+`pleading-stomp-referee.ngrok-free.dev` → must be running, forwarding **:8000**; `make serve` on :8000; `.env` has all 5
+required keys + `PUBLIC_WEBHOOK_URL` + the dashboard `x-vapi-secret` == `VAPI_WEBHOOK_SECRET`; `consent_allowlist.json` =
+`+972509175858` (Asaf's own phone). `make call` reads `.env` fresh (no restart needed); `make serve --reload` reloads code edits.
+**Operating model (unchanged):** autonomous loop; `general-purpose` executers per stage; **INDEPENDENT reviewer on
+contract-touching stages** (the inline-review shortcut was retired after it missed a deliverable-breaking Stage-4 bug —
+keep this); PM re-runs QA itself; commit per stage.
+**Asaf working-style feedback (HONOR):** be **concise**; **focus on exactly what Asaf says**; do **not** re-raise issues he
+has dismissed; diagnose live calls from the transcript + recording, not assumptions.
+**Next PM should:** (a) reset the live-call ledger cap (#3); (b) ask Asaf the *specific* call-quality complaint (or review
+the latest recording) and fix only that; (c) get one clean live call through to a booked Cal.com meeting (LIVE1), then
+verify cost/disclosure/booking from sources; (d) then Stage 9 (video). Budget is fine (~$2 of $50 real).
+
+## 2026-06-24 12:02 — [VOICE] SESSION START
+Picking up: **Stage 8 — live calling** (the only non-✅ work; Stages 0–7 ✅, Stage 8 build-half ✅). Read order completed
+this session: `PM_Methodology_Prompt.md` (verbatim) → latest `PM_LOG.md` entry (the 12:00 cold-start handoff) → `CLAUDE.md`
+→ `PLAN.md` → `QA_checklist.md` → `NOTES.md` (full, incl. the 2026-06-24 live-debug entries) → `ORCHESTRATION.md`.
+State as read (to re-verify against running code, not the ledger):
+- Offline system **complete: NOTES claims 425 green**, tree clean, HEAD `54031b6`. CLAUDE.md + NOTES are current through the
+  **OQ-VOICE-1 revision (realtime speech-to-speech → standard TTS pipeline: gpt-4o + OpenAI-TTS `shimmer` + Deepgram nova-2)**.
+- **Ledger lag noted:** `PLAN.md` is **stale** — still says OpenAI-Realtime brain / `REALTIME_MODEL` / "419 green"; it does
+  NOT reflect today's live fixes or the pipeline revision. (NOTES + PM_LOG are current; PLAN needs a reconciliation pass.)
+- All 9 live-debug fixes committed + each independent-reviewed or live-verified (model, `x-vapi-secret` auth, Vapi
+  result-envelope, Cal.com v1→v2, slot-cap 239→5, tool `server.url`/`server.secret`, turn-taking, standard pipeline).
+- Tool path verified **directly against live Cal.com** (real slots; created+cancelled a real event — no phone call).
+**Three things gate progress (from the 12:00 handoff):** (1) Asaf hasn't named the *specific* call-quality fault — and no
+call has run since the pipeline switch, so the fix may already be in; **do not change more code blind**. (2) **LIVE1 unmet**
+— no live call has booked yet. (3) 🔴 **live-call cap hit** (`live_call_count = 6/6`) → next `make call` is REFUSED, and
+`cumulative_usd=$0` is wrong (cost-capture bug; real spend ≈ $2 of $50). Reset the ledger + fix post-call cost capture
+before any further live call.
+Plan for this session: honor Asaf's style (concise, focus on exactly what he says, don't re-raise dropped items e.g.
+"Ulta"). Surface the reconciled state; get the specific call-quality complaint (or run one fresh call on the new pipeline)
+before touching code; do the safe autonomous prep (reset live-call cap + post-call cost reconciliation) so the next live
+call isn't refused; drive one clean live call → booked Cal.com meeting (LIVE1) → verify from sources; then Stage 9.
+
+## 2026-06-24 12:49 — [VOICE] SESSION START
+Picking up: **Stage 8 — live calling** (only non-✅ work; Stages 0–7 ✅, Stage 8 build-half ✅). Read order completed
+this session: `PM_Methodology_Prompt.md` (verbatim) → latest `PM_LOG.md` entries (12:00 cold-start handoff + 12:02
+SESSION START) → `CLAUDE.md` (in context) → `PLAN.md` → `QA_checklist.md` → `NOTES.md` (incl. the two new 2026-06-24
+live-debug entries) → `ORCHESTRATION.md`.
+**Resume anomaly (verified against disk, not the ledger):** the **12:02 SESSION START has no matching SESSION END** —
+that session ran, did real work, and **never closed**. HEAD is `54031b6`; the 12:02 work is **uncommitted on disk**:
+`M Makefile / app/vapi_client.py / tests/test_voice.py / NOTES.md / PM_LOG.md`, `?? scripts/inspect_call.py /
+tests/test_inspect_call.py`. **PM-unverified, unreviewed, uncommitted, unlogged-END.**
+What the 12:02 session did (read from the diff + NOTES additions, NOT yet re-verified by me):
+1. **Built `scripts/inspect_call.py` + `make inspect` + `tests/test_inspect_call.py` (7 offline tests)** + a read-only
+   `VapiVoiceProvider.fetch_call()` (concrete adapter ONLY — the graded 3-method `VoiceProvider` interface is UNCHANGED).
+2. **Diagnosed "not finishing sentences" = realtime fragmentation, NOT interruption** (`interrupted: 0` across the 6
+   pre-switch calls) → the OQ-VOICE-1 pipeline switch (`54031b6`) was the right fix; do NOT tune `stopSpeakingPlan`.
+3. **Reset the persistent ledger to $0 / live_call_count=0** (cleared the 6/6 cap). Real sunk debug spend ≈ **$1.72 / $50**.
+4. **🎯 Ran a fresh live call on the standard pipeline → LIVE1/LIVE2 MET (claimed):** call `019ef8f2-…`, cost **$0.1482**
+   (≤ $1 cap), booked a **REAL Cal.com event** (`event_id ecFPyLMFsbohwue3si1GML`) end-to-end (check_availability →
+   book_meeting → log_disposition=booked), disclosure byte-exact first, `interrupted: 0`. Recording kept for the video.
+5. **Pacing tuning (Asaf live review):** TTS `speed=1.2` + `startSpeakingPlan.waitSeconds 0.6→0.4` in `vapi_client.py`
+   + a `test_pacing_tuned_faster` assertion. These are Vapi tuning knobs (NOT §9 governance constants), but they DO touch
+   the VOICE1 assistant payload → reviewer-gate territory.
+**State to re-verify before trusting it:** offline suite green with the pacing diff + the 7 new inspect tests (handoff
+claimed 425 green pre-12:02); ENV4 import-safe with `fetch_call` added; both literals byte-exact; LIVE1/LIVE2 claim
+against the real call data; no graded contract changed.
+**One open decision (NOT mine to make):** lead timezone — the model invented `America/New_York` (Asaf is Asia/Jerusalem);
+booking is mechanically correct (right UTC) but slots are *voiced* at odd hours. Fix options: pin demo lead tz to
+Asia/Jerusalem, or have Aria ask the prospect's tz. UX/demo polish, not a governance break.
+Plan for this session: honor Asaf's style (concise; fix only what he names; don't re-raise dropped items e.g. "Ulta").
+(1) PM-verify the 12:02 on-disk work (run the suite, re-prove ENV4, confirm LIVE1/LIVE2 from the call data, confirm no
+graded contract touched); (2) surface the reconciled state + the lead-tz decision to Asaf; (3) on his go, commit the
+12:02 work as the Stage-8 live checkpoint; then Stage 9 (video). Will NOT place new live calls autonomously.
+
+## 2026-06-24 13:28 — [VOICE] SESSION START
+Picking up: **Stage 8 — live calling** (only non-✅ work; Stages 0–7 ✅, Stage 8 build-half ✅, LIVE1/LIVE2 met on the
+standard pipeline per the last NOTES entries). Read order completed this session: `PM_Methodology_Prompt.md` (verbatim)
+→ `PM_LOG.md` (full, through the 12:49 START) → `CLAUDE.md` (in context) → `PLAN.md` → `QA_checklist.md` → `NOTES.md`
+(tail, incl. all 2026-06-24 live-debug + disclosure entries) → `ORCHESTRATION.md`.
+**Resume anomaly (verified against disk via `git status`, not the ledger):** the **12:49 SESSION START has no matching
+SESSION END** — another session ran real work and never closed (the recurring mid-stage-crash pattern). HEAD is
+`54031b6`; there is an **uncommitted batch on disk, PM-unverified-this-session, unreviewed, uncommitted, unlogged-END:**
+`M CLAUDE.md Makefile NOTES.md PM_LOG.md QA_checklist.md app/config.py app/vapi_client.py data/value_prop.md
+docs/STAGE9_STORYBOARD.md tests/test_env.py tests/test_voice.py` + `?? scripts/inspect_call.py tests/test_inspect_call.py`.
+Also `?? "llm course/"` — **unrelated to this project** (not ours; do NOT touch/commit; likely belongs in `.gitignore`).
+What the batch is (read from the diff + the matching NOTES entries, NOT yet re-verified by me): (1) `scripts/inspect_call.py`
++ `make inspect` + 7 offline tests + a read-only `VapiVoiceProvider.fetch_call()` (concrete adapter only — graded 3-method
+`VoiceProvider` interface UNCHANGED); (2) pacing tuning (OpenAI-TTS `speed` 1.0→1.2, `startSpeakingPlan.waitSeconds`
+0.6→0.4 — `vapi_client` knobs, not §9); (3) **a GRADED contract change** — `DISCLOSURE_LINE` dropped the recording notice
+(kept the AI self-id) + CON3 reframed (recording stays ON, one-party-consent scope), touched byte-for-byte across config.py
+/ CLAUDE.md §9 / QA CON3 / test_voice / test_env / value_prop / storyboard. NOTES claims suite **433 green** PM-run.
+State as read (to RE-VERIFY against running code, not trust the ledger): offline suite green count; ENV4 import-safe with
+`fetch_call` added; both graded literals byte-exact == config (esp. the NEW `DISCLOSURE_LINE`); no graded interface signature
+changed. LIVE1/LIVE2 already verified from the real call `019ef8f2…` (cost $0.1482, real Cal.com event, `interrupted: 0`).
+Per the corrected post-Stage-4 process + the NOTES note itself: **the graded `DISCLOSURE_LINE`/CON3 change is OWED an
+independent review before commit, and commit awaits Asaf's word.**
+Plan for this session (honor Asaf's style — concise; fix only what he names; don't re-raise dropped items e.g. "Ulta"):
+(1) PM-verify the on-disk batch (run the offline suite for a ground-truth green count, re-prove ENV4, confirm the new
+graded literal byte-exact == config, confirm no graded interface signature touched); (2) surface the reconciled state +
+the **two items that need Asaf**: (a) the owed independent review + commit of the graded disclosure batch, (b) the
+lead-timezone decision (pin demo lead tz to Asia/Jerusalem vs. have Aria ask the prospect). **Will NOT commit the graded
+batch without the independent review + Asaf's go, and will NOT place live calls autonomously.** Then: Stage 9 (video).
+
+## 2026-06-24 14:10 — [VOICE] SESSION START
+Picking up: **Stage 8 — live calling** (only non-✅ work). Read order completed: `PM_Methodology_Prompt.md` (verbatim)
+→ `PM_LOG.md` (full, through the 13:28 START) → `CLAUDE.md` (in context) → `PLAN.md` → `QA_checklist.md` → `NOTES.md`
+(full, incl. all 2026-06-24 live-debug + the OQ-VOICE-1 pipeline-revision + STANDING-RULE/Bug-2 entries) → `ORCHESTRATION.md`.
+**Resume anomaly (verified vs disk, not the ledger):** the **13:28 SESSION START has no matching SESSION END** (recurring
+mid-stage pattern). HEAD `54031b6`; an uncommitted batch is on disk (`M CLAUDE.md Makefile NOTES.md PM_LOG.md
+QA_checklist.md app/config.py app/eval/rubric.py app/persona.py app/server.py app/tools.py app/vapi_client.py
+data/value_prop.md docs/STAGE9_STORYBOARD.md tests/conftest.py tests/test_env.py tests/test_voice.py` + untracked
+`scripts/inspect_call.py scripts/review_dump.py scripts/score_call.py tests/test_inspect_call.py tests/test_lead_context.py
+tests/test_qualify.py`; `?? "llm course/"` is **not ours** — do not touch). PM-unverified/unreviewed/uncommitted. **I am
+NOT touching that batch this session** — this session is a discrete deliverable, not a continuation of the live-call build.
+**This session's task (Asaf):** author an exhaustive 100+-parallel-tester stress/adversarial **testing architecture** for
+the live voice agent (4 scopes: logic/RAG/state text-bypass · telephony/audio · latency/STT-TTS · concurrency/load).
+**Graded-contract collision to surface (the PM job here):** a 100+-parallel fleet against the **live** Vapi/Twilio bridge
+would breach `HARD_BUDGET_USD=$50`, `MAX_LIVE_CALLS=6`, the **single** consented number (one-party-consent scope), and the
+**documented cross-process budget-ledger TOCTOU** (live must run SEQUENTIALLY). Plan: deliver the full architecture but
+**tier every test by execution surface** (OFFLINE deterministic harness = where 100+ parallel belongs · LOCAL MOCK-BRIDGE
+for audio/telephony/latency faults · a single serialized LIVE-GATED lane ≤6 calls for real-telephony sign-off), and flag
+the collision with a recommendation. Honor Asaf's style (concise; no dismissed items). Write the doc, then SESSION END.
+
+## 2026-06-24 14:55 — [VOICE] SESSION END / HANDOFF (Stage 8.5 adversarial/load testing architecture — offline+MOCK ✅; live lane scaffolded+gated)
+Did: built the 100+-parallel-tester **testing architecture** end-to-end and PM-verified it. Surfaced the
+graded-contract collision (100+ live = breach of $50 / `MAX_LIVE_CALLS=6` / single-number consent / ledger TOCTOU)
+and resolved it by tiering the fleet: **OFFLINE** harness (where 100+ belongs, $0) + **LOCAL MOCK-BRIDGE** + a
+small **LIVE-GATED** lane. Asaf authorized (via planning) scope = doc+harness+MOCK-BRIDGE and a **bounded live lane
+(graded change): sequential, ≤50 calls / ≤$15, 2–3 consented numbers**.
+- **OFFLINE (Scope 1+4):** +2 adversarial `Persona`s (`INJECTION`, `SLOT_REJECTER`; NOT in `PERSONA_MATRIX` → graded
+  bake-off numbers unchanged); standalone computed `rubric.slot_reoffer_handled` (NOT a 6th RubricResult field → 0–5
+  EVAL3 score intact); `tests/test_stress_logic.py` (STR-L*) + `tests/test_stress_concurrency.py` (STR-C*, incl. a
+  **deterministic** two-ledger demo of the cross-process budget TOCTOU — STR-C7).
+- **MOCK (Scope 2+3):** `app/testing/mock_bridge.py` (webhook+transcript fault injector — NOT a softphone; media path
+  is Vapi's) + `tests/test_stress_telephony.py` (STR-T*) + `tests/test_stress_latency.py` (STR-P*).
+- **LIVE (Phase C, scaffolded, NOT run):** `MAX_LIVE_STRESS_CALLS=50` (§9), additive `budget.default_ledger_path()`,
+  `scripts/stress_live.py` (injectable `run_stress_lane` + gated `main`); `tests/test_stress_live_lane.py` proves the
+  gating OFFLINE (halts at the count cap + $15 reserve; refuses non-consented — spy: no dial past a gate).
+- Spine/doc: `docs/STRESS_TEST_ARCHITECTURE.md` (full STR-* tables, tiers, fleet mapping); QA `§12` + Stage-8.5 map;
+  PLAN Stage 8.5; NOTES decision+handback; CLAUDE.md §9 constant; `.gitignore` += `llm course/` (stray non-project dir).
+Verified numbers (PM-run, not assumed): full suite **522 passed / 1 skipped / 1 xfailed** (baseline this session was
+**474**, NOT the ledger's 458 — re-run; +48 passed/+1 skip(live barge-in STR-T1)/+1 xfail(Bug-1 re-offer guard));
+deterministic; **ENV4 re-proven** from an empty cwd across `app.testing.mock_bridge` + `scripts.stress_live` (lazy
+singletons None, httpx not pulled); `MAX_LIVE_STRESS_CALLS == 50`; `test_leakage` green with the new files present.
+Status now: 🔄 **Stage 8.5 — Offline+MOCK ✅ (committed? NO).** All new work is **uncommitted on disk** (plus the
+pre-existing 13:28 qualify/disclosure batch, which I did NOT touch — keep them separable at commit).
+Next PM/Asaf should: (1) **independent reviewer gate** on the graded slice (`MAX_LIVE_STRESS_CALLS`, the budget
+accessor, the live lane) — required before commit per the corrected post-Stage-4 process; (2) on Asaf's word, commit
+the Stage-8.5 offline work (separate commit from the qualify/disclosure batch); (3) for ANY live stress run: clear the
+**recording-notice compliance gate** (confirm the 2–3 numbers are one-party-consent, else restore the notice in
+`DISCLOSURE_LINE`/CON3) → run `scripts/stress_live.py` **sequentially** → PM reconciles cost ≤ caps from receipts.
+Watch out for / open: graded change owed a review; live calls are human-coordinated (PM will NOT auto-place); PLAN still
+has the older stale pipeline notes elsewhere (not reconciled this session — out of scope of the ask); the qualify/
+disclosure batch from 13:28 is still uncommitted/unreviewed. Out of scope (by Asaf): the LangGraph runner + a real
+RTP/softphone bridge.

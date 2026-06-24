@@ -22,7 +22,7 @@ more qualified meetings without adding SDR headcount.
    robocall), Alta's agents sound natural, respond in real time, and adapt to the
    prospect's tone.
 
-4. **Full compliance built in** — Every call opens with a recorded-disclosure, honours
+4. **Full compliance built in** — Every call opens with a clear AI disclosure, honours
    do-not-call lists, and respects calling-hours windows.
 
 5. **Easy integration** — Connects to your CRM and calendar in under a day; no complex

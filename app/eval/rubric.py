@@ -292,6 +292,140 @@ def _is_failsafe_drift(text: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Bug-2 behavioral signal — pitch_tailored (does the pitch reflect the pain?)
+# ---------------------------------------------------------------------------
+
+def _word_tokens(text: str) -> set[str]:
+    """Distinctive lowercase word tokens (≥4 chars, minus stop-words)."""
+    return {
+        w for w in re.findall(r"[a-z][a-z\-]{3,}", text.lower())
+        if w not in _STOP_WORDS
+    }
+
+
+def _discriminative_tokens(target: str, value_props: tuple[str, ...]) -> set[str]:
+    """Tokens of *target* that appear in NO other value-prop — its fingerprint.
+
+    Using only the discriminating tokens prevents generic shared words ('today',
+    'meeting') from making an off-pain pitch look tailored.
+    """
+    target_tokens = _word_tokens(target)
+    others: set[str] = set()
+    for vp in value_props:
+        if vp == target:
+            continue
+        others |= _word_tokens(vp)
+    return target_tokens - others
+
+
+def pitch_tailored(
+    transcript: list[Turn], *, value_prop_path: Path | str | None = None
+) -> bool:
+    """True iff the agent's PITCH reflects the value-prop matching the prospect's pain.
+
+    Computes the expected emphasis from the discovery answer via tools.qualify, then
+    checks the pitch turn carries that value-prop's discriminative tokens. This is the
+    Bug-2 regression guard: a canned full-list / off-pain pitch scores False.
+
+    Vacuously True when there is no pitch turn, no discovery answer, or the answer was
+    too vague to route (a non-answer is a separate concern, not a tailoring failure).
+    """
+    pitch = next(
+        (t for t in transcript
+         if t.speaker is Speaker.AGENT and t.stage is Stage.PITCH),
+        None,
+    )
+    if pitch is None:
+        return True
+
+    # The discovery answer = the last callee turn before the pitch.
+    answer = None
+    for t in transcript:
+        if t.speaker is Speaker.AGENT and t.stage is Stage.PITCH:
+            break
+        if t.speaker is Speaker.CALLEE:
+            answer = t.text
+    if not answer:
+        return True
+
+    # Lazy imports (avoid an import cycle + keep rubric import-safe — ENV4).
+    from app.tools import qualify
+    from app.persona import load_value_prop
+
+    value_props = load_value_prop(value_prop_path).value_props
+    data = qualify(answer=answer, value_props=value_props).to_dict()["data"]
+    emphasize = data["emphasize"]
+    if emphasize is None:  # vague/empty answer → nothing to tailor to
+        return True
+
+    fingerprint = _discriminative_tokens(emphasize, value_props)
+    return bool(_word_tokens(pitch.text) & fingerprint)
+
+
+# ---------------------------------------------------------------------------
+# Bug-1 behavioral signal — slot_reoffer_handled (does a TIME-rejection recover?)
+# ---------------------------------------------------------------------------
+
+# Phrases that signal the callee rejected the proposed TIME but still wants to meet
+# (a re-offer should follow) — distinct from a hard no to the MEETING itself. These
+# must be UNAMBIGUOUS rejections: bare "that time" / "anything else" were removed
+# because they also occur in acceptances ("anything else you need?", "that time we
+# spoke"), which would mis-flag a booked, compliant call as a re-offer failure
+# (independent review finding 2026-06-24).
+_TIME_REJECTION_MARKERS = (
+    "doesn't work",
+    "does not work",
+    "won't work",
+    "will not work",
+    "another time",
+    "different time",
+    "other times",
+    "that slot doesn't",
+    "that one doesn't",
+)
+# Phrases that mean the callee rejected the MEETING outright — NOT a re-offer case.
+_MEETING_REJECTION_MARKERS = (
+    "not interested",
+    "don't want to meet",
+    "do not want to meet",
+    "don't call",
+    "no thanks",
+    "stop calling",
+)
+
+
+def slot_reoffer_handled(transcript: list[Turn]) -> bool:
+    """True iff a TIME-rejection was met with an agent RE-OFFER, not a collapse (Bug 1).
+
+    A booking agent must treat "that time doesn't work, got anything else?" as a
+    request for an alternative slot — NOT as a terminal no. This signal is True iff,
+    after a callee turn that rejects the proposed *time* (while still wanting the
+    *meeting*), the agent produces a later PROPOSE_SLOT turn (a genuine re-offer)
+    rather than going straight to CLOSE/DONE/failsafe.
+
+    Vacuously True when there is no time-rejection turn (nothing to re-offer). This
+    is the Bug-1 regression guard: the current finite-stage runner proposes a slot
+    once and collapses on rejection, so an end-to-end SLOT_REJECTER run scores False
+    until the re-offer loop is added — exactly what this signal is meant to catch.
+    """
+    for i, t in enumerate(transcript):
+        if t.speaker is not Speaker.CALLEE:
+            continue
+        low = t.text.lower()
+        # Skip outright meeting rejections — those are correctly terminal.
+        if any(m in low for m in _MEETING_REJECTION_MARKERS):
+            continue
+        if any(m in low for m in _TIME_REJECTION_MARKERS):
+            # A re-offer = a later agent turn back at PROPOSE_SLOT.
+            reoffered = any(
+                later.speaker is Speaker.AGENT and later.stage is Stage.PROPOSE_SLOT
+                for later in transcript[i + 1 :]
+            )
+            return reoffered
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 

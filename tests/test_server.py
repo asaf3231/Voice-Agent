@@ -104,7 +104,8 @@ class TestVoice2WebhookSecret:
     def test_correct_secret_processed(self, client):
         """A correctly authenticated tool webhook is processed (200, structured result)."""
         resp = _post_signed(
-            client, "/webhook/tool", {"name": "end_call", "arguments": {}},
+            client, "/webhook/tool",
+            {"name": "detect_voicemail", "arguments": {"transcript": "hi"}},
             secret=WEBHOOK_SECRET,
         )
         assert resp.status_code == 200
@@ -161,8 +162,9 @@ class TestVoice3ToolDispatch:
         # result is a string the model consumes
         assert isinstance(body["results"][0]["result"], str)
 
-    def test_end_call_dispatches(self, client):
-        """end_call routes to app.tools.end_call and returns its structured result."""
+    def test_end_call_is_retired_not_dispatchable(self, client):
+        """`end_call` is retired (D9): the live agent ends via Vapi's NATIVE end-call,
+        so the webhook no longer dispatches a custom end_call — it's an unknown tool."""
         resp = _post_signed(
             client, "/webhook/tool",
             {"name": "end_call", "arguments": {"reason": "completed"}},
@@ -170,9 +172,8 @@ class TestVoice3ToolDispatch:
         )
         assert resp.status_code == 200
         data = _result_payload(resp)
-        assert data["ok"] is True
-        assert data["data"]["ended"] is True
-        assert data["data"]["reason"] == "completed"
+        assert data["ok"] is False
+        assert data["error"] == "unknown_tool"
 
     def test_detect_voicemail_dispatches_with_args(self, client):
         """detect_voicemail routes with validated args and classifies the transcript."""
@@ -217,7 +218,7 @@ class TestVoice3ToolDispatch:
         """Bad/extra args for a known tool → structured invalid_input, not a 500."""
         resp = _post_signed(
             client, "/webhook/tool",
-            {"name": "end_call", "arguments": {"bogus_param": True}},
+            {"name": "detect_voicemail", "arguments": {"bogus_param": True}},
             secret=WEBHOOK_SECRET,
         )
         assert resp.status_code == 200
@@ -231,8 +232,8 @@ class TestVoice3ToolDispatch:
             "message": {
                 "toolCalls": [
                     {"id": "call_nested",
-                     "function": {"name": "end_call",
-                                  "arguments": {"reason": "vapi-nested"}}}
+                     "function": {"name": "detect_voicemail",
+                                  "arguments": {"transcript": "leave a message after the tone"}}}
                 ]
             }
         }
@@ -241,7 +242,7 @@ class TestVoice3ToolDispatch:
         assert resp.json()["results"][0]["toolCallId"] == "call_nested"
         data = _result_payload(resp)
         assert data["ok"] is True
-        assert data["data"]["reason"] == "vapi-nested"
+        assert data["data"]["is_voicemail"] is True
 
     def test_no_tool_call_in_payload_structured(self, client):
         """A verified payload with no tool call → a structured 'no_tool_call', no crash."""

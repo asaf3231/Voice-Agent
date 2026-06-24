@@ -47,6 +47,7 @@ Status values: ⬜ Not started · 🔄 In progress · 🟡 Awaiting verification
 | 6 | Offline evaluation harness | `EVAL1`–`EVAL6` | — | ✅ Complete (2026-06-23, 335 green; A/B re-run flipped winner **B→A**, persona-lock awaiting Asaf) |
 | 7 | Anti-leakage & packaging hardening | `LEAK1`–`LEAK5`, `PKG1`–`PKG4` | ✅ | ✅ Complete (2026-06-23, 387 green; indep. security gate: 2 MED fixed; 1 HIGH → Stage-8 blocker) |
 | 8 | Live calling (lean) + receipts | `LIVE1`–`LIVE4`, `SEC5` | — | ⬜ Not started |
+| 8.5 | Adversarial / load hardening (100+ tester fleet) | `STR-L*`/`STR-T*`/`STR-P*`/`STR-C*`/`STR-LIVE` (§12) | ✅ | 🔄 Offline+MOCK ✅ (PM-verified); live lane scaffolded, gated |
 | 9 | Video explanation + demo script | `VID1`–`VID3` | — | ⬜ Not started |
 
 **Reviewer-gate trigger (this project):** on any stage that touches a graded contract — a §9 named
@@ -254,6 +255,37 @@ real money — PM will NOT auto-place calls):* `LIVE1`/`LIVE2` (real disclosure-
 `SEC5` (cost reconciliation from receipts), + the Stage-4 public-tunnel signed-webhook smoke test. Needs the real `.env` +
 Asaf running `make call` to the 3 consented numbers. · **Reviewer gate:** ✅ build half (independent); live results PM-verified
 directly. Resolves `OQ-VOICE-4` once the live calls run.
+
+---
+
+## Stage 8.5 — Adversarial / load hardening (100+ parallel tester fleet)
+**Goal:** A zero-blind-spot stress/adversarial testing architecture for the live voice agent across
+four scopes (logic/RAG/state text-bypass · telephony/audio · latency/STT-TTS · concurrency/load), with
+the 100+-parallel fan-out routed to surfaces that respect the graded contracts.
+**Inputs:** the working system; `docs/STRESS_TEST_ARCHITECTURE.md`; the offline harness + webhook server.
+**Outputs:** the architecture doc; OFFLINE harness extensions (2 adversarial personas + the
+`slot_reoffer_handled` signal); the MOCK-BRIDGE (`app/testing/mock_bridge.py`); the gated live stress
+lane (`scripts/stress_live.py` + `MAX_LIVE_STRESS_CALLS`); `tests/test_stress_{logic,concurrency,
+telephony,latency,live_lane}.py`.
+**Tiers (every `STR-*` is tagged):** OFFLINE (deterministic harness — where 100+ parallel belongs, $0) ·
+MOCK (local fault-injection over the webhook+transcript layer — the media path is Vapi's) · LIVE (the
+bounded, sequential, gated stress lane).
+**Definition of Done (QA: `STR-*`, §12):**
+- [x] OFFLINE — `STR-L*` (logic/injection/booking-integrity/tool-args/unicode) + `STR-C*`
+  (budget-guard soundness, consent concurrency, idempotency, isolation, **deterministic cross-process
+  TOCTOU demonstration**) pass; deterministic; `ENV4` import-safe with the new modules.
+- [x] MOCK — `STR-T*` (lossy transcript, drop, voicemail, redelivery-idempotency, malformed envelopes,
+  disclosure-pinned) + `STR-P*` (webhook TTFB SLO, STT resilience, slow-backend no-phantom) pass.
+- [x] LIVE-gating proven OFFLINE — `STR-LIVE`: the lane halts at `MAX_LIVE_STRESS_CALLS` + the $15 live
+  reserve and refuses non-consented numbers (spy-proven no dial past a gate).
+- [ ] **Graded-contract change owed an INDEPENDENT review before commit** (corrected post-Stage-4
+  process): `MAX_LIVE_STRESS_CALLS` (§9), the `budget.default_ledger_path()` accessor, the live lane.
+- [ ] **Live execution — human-coordinated (PM will NOT auto-place calls)** + a **recording-notice
+  compliance gate**: confirm the 2–3 added consented numbers are all one-party-consent jurisdictions, or
+  restore the spoken recording notice in `DISCLOSURE_LINE` (CON3) before any two-party number.
+**Status:** 🔄 In progress — **Offline + MOCK ✅ (PM-verified: 522 passed / 1 skipped / 1 xfailed, from a
+474 baseline; `ENV4` re-proven)**; live lane scaffolded + gating offline-proven; live calls pending the
+independent review + Asaf's coordination. · **Reviewer gate:** owed (graded constant + budget accessor).
 
 ---
 

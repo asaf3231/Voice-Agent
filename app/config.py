@@ -54,7 +54,12 @@ def value_prop_path() -> Path:
 HARD_BUDGET_USD: float = 50.00      # absolute ceiling (the provided card limit)
 LIVE_CALL_BUDGET_USD: float = 15.00  # soft reserve for live calls (lean posture)
 MAX_COST_PER_CALL_USD: float = 1.00  # per-call projected-cost ceiling
-MAX_LIVE_CALLS: int = 6             # lean live eval-set ceiling
+MAX_LIVE_CALLS: int = 6             # lean live eval-set ceiling (the normal demo path)
+# Count ceiling for the bounded LIVE STRESS lane (scripts/stress_live.py) — distinct
+# from MAX_LIVE_CALLS so the demo path is unchanged. Authorized 2026-06-24 (Asaf):
+# sequential, ≤50 calls, spend still bounded by LIVE_CALL_BUDGET_USD=$15 (the real
+# limiter) and the unchanged $50 HARD_BUDGET_USD + $1 per-call ceiling.
+MAX_LIVE_STRESS_CALLS: int = 50
 # Rounding tolerance for the POST-HOC over-cap alarm in budget.record_cost. The
 # pre-call gate (budget_permits) is exact and does NOT use this. Decimal to avoid
 # float-precision drift. Promoted to a §9-controlled constant per F1 (2026-06-23).
@@ -87,11 +92,17 @@ RANDOM_SEED: int = 42
 # --- byte-exact graded literals (CLAUDE.md §9 / NOTES.md — copy byte-for-byte) ---
 DISCLOSURE_LINE: str = (
     "Hi, this is Aria, an AI assistant calling on behalf of Alta. "
-    "This call may be recorded for quality. Do you have a quick minute?"
+    "Do you have a quick minute?"
 )
 FAILSAFE_HANGUP_LINE: str = (
     "Thanks for your time — I'll follow up by email. Goodbye."
 )
+# The PLATFORM-spoken close on any live call end (Vapi endCallMessage). A single
+# neutral line that fits both a booking and a decline — so the platform goodbye is
+# byte-exact and never model-generated (D4/D5), and never contradicts a booking with
+# "I'll follow up by email" (independent review 2026-06-24). FAILSAFE_HANGUP_LINE
+# stays the offline safe-terminal literal (CONV6) + decline pre-close.
+END_CALL_MESSAGE: str = "Thanks so much for your time. Goodbye!"
 
 # --- the agent's callable functions ---
 # name == schema name == dispatch key (CLAUDE.md §9)
@@ -100,11 +111,16 @@ AGENT_TOOLS: list[str] = [
     "book_meeting",
     "log_disposition",
     "detect_voicemail",
-    "end_call",
 ]
+# NOT live agent tools (retired 2026-06-24, each verified live):
+#  - `end_call`: a custom function returning JSON never actually hung up the call
+#    (the agent rambled past "goodbye"). Termination is now pinned to Vapi's NATIVE
+#    end-call (endCallFunctionEnabled) + the byte-exact END_CALL_MESSAGE. (D9)
+#  - `qualify` (Bug 2): added a ~2.5s mid-call round-trip for routing the model does
+#    inline; survives only as the internal oracle behind rubric.pitch_tailored.
 
 # Import-time dispatch-identity assert: catches a rename/typo at import, not at runtime.
-assert len(AGENT_TOOLS) == 5, "AGENT_TOOLS must have exactly 5 entries"
+assert len(AGENT_TOOLS) == 4, "AGENT_TOOLS must have exactly 4 entries"
 assert len(AGENT_TOOLS) == len(set(AGENT_TOOLS)), "AGENT_TOOLS entries must be unique"
 
 
@@ -137,6 +153,29 @@ def require_setting(key: str) -> str:
             "Copy .env.example → .env and fill the real value."
         )
     return value
+
+
+# Stable, intentional fallback lead id for the lean single-lead demo. NOT a
+# model-fabricated placeholder — it is supplied by us so book_meeting/log_disposition
+# are never called under a hallucinated id (D3 fix, 2026-06-24).
+DEMO_LEAD_ID = "demo-lead"
+
+
+def get_lead_context() -> tuple[str, str | None]:
+    """Return the AUTHORITATIVE (lead_id, lead_timezone) for the active call.
+
+    The runtime — not the model — owns these. Sourced from the environment so the
+    two processes (place_demo_call building the assistant, the webhook serving tool
+    calls) agree without depending on a metadata round-trip:
+      - lead_id:        LEAD_ID  (falls back to the stable DEMO_LEAD_ID)
+      - lead_timezone:  LEAD_TIMEZONE, then CALCOM_ATTENDEE_TIMEZONE (else None →
+                        check_availability degrades to the sales-calendar tz).
+
+    Call at runtime only (reads env via get_setting) — never at import (ENV4).
+    """
+    lead_id = get_setting("LEAD_ID") or DEMO_LEAD_ID
+    lead_tz = get_setting("LEAD_TIMEZONE") or get_setting("CALCOM_ATTENDEE_TIMEZONE")
+    return lead_id, lead_tz
 
 
 def load_env(dotenv_path: str | Path | None = None) -> None:

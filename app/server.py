@@ -32,7 +32,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.config import get_setting, load_env
+from app.config import get_lead_context, get_setting, load_env
 from app.consent import mask_phone
 from app.tools import dispatch
 
@@ -162,6 +162,41 @@ def _extract_tool_call(
     return None, None, {}
 
 
+def _payload_metadata(payload: dict[str, Any]) -> dict[str, Any]:
+    """Best-effort lookup of the assistant metadata Vapi echoes in a webhook payload.
+
+    Vapi's exact nesting for echoed metadata is a live-reconcile item (like the
+    x-vapi-secret header was) — we probe the likely containers and return the first
+    that carries lead context; an empty dict if none (→ env fallback).
+    """
+    msg = payload.get("message") if isinstance(payload, dict) else {}
+    msg = msg if isinstance(msg, dict) else {}
+    call = msg.get("call") or payload.get("call") or {}
+    call = call if isinstance(call, dict) else {}
+    for container in (call.get("assistant"), call.get("assistantOverrides"),
+                      msg.get("assistant"), call, msg, payload):
+        if isinstance(container, dict):
+            md = container.get("metadata")
+            if isinstance(md, dict) and (md.get("lead_id") or md.get("lead_timezone")):
+                return md
+    return {}
+
+
+def extract_lead_context(payload: dict[str, Any]) -> tuple[str, str | None]:
+    """Return the AUTHORITATIVE (lead_id, lead_timezone) for this tool call (D2/D3).
+
+    Prefers the assistant metadata Vapi echoes in the payload (scalable path); fills
+    any gap from the env-backed get_lead_context() so the demo works even without the
+    metadata round-trip. The model's own tool args are NEVER consulted here — the
+    runtime, not the model, decides which lead a booking/disposition is written under.
+    """
+    meta = _payload_metadata(payload)
+    lead_id = meta.get("lead_id")
+    lead_tz = meta.get("lead_timezone")
+    env_id, env_tz = get_lead_context()
+    return (lead_id or env_id, lead_tz or env_tz)
+
+
 def _tool_results(tool_call_id: str | None, payload: dict[str, Any]) -> JSONResponse:
     """Wrap a tool's structured payload in **Vapi's tool-result envelope** (VOICE3).
 
@@ -198,7 +233,12 @@ async def tool_webhook(request: Request) -> JSONResponse:
         if not name:
             return _tool_results(tool_call_id, {"ok": False, "error": "no_tool_call",
                                                 "message": "webhook carried no tool call"})
-        result = dispatch(name, **args)
+        # Inject AUTHORITATIVE lead context; strip any model-supplied lead_id/timezone
+        # so a hallucinated placeholder or invented tz can never reach a tool (D2/D3).
+        lead_id, lead_timezone = extract_lead_context(payload)
+        args.pop("lead_id", None)
+        args.pop("lead_timezone", None)
+        result = dispatch(name, lead_id=lead_id, lead_timezone=lead_timezone, **args)
         return _tool_results(tool_call_id, result.to_dict())
     except Exception as exc:  # noqa: BLE001 — never leak a 500 traceback (§6)
         return _tool_results(tool_call_id, {"ok": False, "error": "handler_error",

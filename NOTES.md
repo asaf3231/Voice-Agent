@@ -227,7 +227,7 @@ PM's own eyes) before the stage is marked ✅/committed** — the inline shortcu
 | `RANDOM_SEED` | `42` | Determinism seed for all stochastic offline components |
 
 ### Byte-exact graded literals
-- `DISCLOSURE_LINE` = `"Hi, this is Aria, an AI assistant calling on behalf of Alta. This call may be recorded for quality. Do you have a quick minute?"`
+- `DISCLOSURE_LINE` = `"Hi, this is Aria, an AI assistant calling on behalf of Alta. Do you have a quick minute?"`  *(recording notice dropped 2026-06-24, Asaf — AI self-id retained; recording stays on, one-party-consent scope; see decision log)*
   — must be the **first** thing spoken on every call (compliance + the project's one byte-exact contract; analog to the reference's `FALLBACK_MESSAGE`). Verified by `CON2`.
 - `FAILSAFE_HANGUP_LINE` = `"Thanks for your time — I'll follow up by email. Goodbye."`
   — the safe terminal said on turn-cap, error, or voicemail-timeout. Verified by `CONV6`.
@@ -682,3 +682,124 @@ recordingEnabled CON3; 5 tools w/ server.url+secret; turn-taking). Suite **425 g
 adapter unchanged. **Verify live:** the next call should have clean, uninterrupted audio + book end-to-end.
 **Iteration approach (Asaf):** use the **offline eval** (simulated_callee + rubric) for conversation/persona iteration —
 free, instant, deterministic — rather than a custom live two-agent rig (budget + a transcript-reviewer can't hear audio).
+
+### 2026-06-24 — "Not finishing sentences" diagnosed from the timestamped transcript: fragmentation, NOT interruption  *(PM-verified, read-only)*
+**New tool (PM-built, offline-tested, not graded):** `scripts/inspect_call.py` + `make inspect CALL_IDS="..."` renders any
+Vapi call's transcript with **per-utterance timestamps** + an `(INTERRUPTED)` marker + a cut-off count. Reuses a new
+read-only `VapiVoiceProvider.fetch_call()` (concrete adapter only — the graded 3-method `VoiceProvider` interface is
+UNCHANGED). 7 offline tests over a sample call dict (`tests/test_inspect_call.py`) — `render_transcript()` is pure/no-network.
+**Finding (read-only `GET /call`, the data not assumptions):** across the 6 pre-switch calls, Aria's `interrupted` flag is
+**0** — so the cause is NOT the `stopSpeakingPlan` backchannel-interruption we were about to tune. The transcript text is
+itself **fragmented**: separate bot messages truncated mid-word/clause (e.g. `"...calls per"`, stranded `"needing ramp time
+or breaks. And"`, `"...Wanna grab 20 minutes for that? I can"`). This is **realtime-model output fragmentation** — exactly
+the failure the OQ-VOICE-1 revision (realtime → standard TTS) was made to fix. **All 6 calls predate the 11:51 pipeline
+switch (latest 08:54), so the fix is committed but UNTESTED LIVE.** → Next step is one fresh call on the standard pipeline,
+then re-inspect; do **not** touch `stopSpeakingPlan` until the data shows a real `interrupted: true`.
+**Real spend reconciled (from Vapi per-call `cost`, verify-the-number):** 6 calls = $0.0634+$0.2894+$0.2713+$0.0849+$0.5667+
+$0.4488 = **$1.7245 of $50**. The persistent ledger was reset to $0 / `live_call_count=0` this session (handoff-directed) to
+clear the 6/6 cap; the $1.72 is sunk debugging spend (immaterial vs the $50 cap; per-call $1 ceiling held on every call).
+Proper receipts get captured on the real demo run.
+
+### 2026-06-24 — ✅ LIVE1/LIVE2 MET: first end-to-end live booking on the standard TTS pipeline  *(PM-verified from the call data)*
+**Call `019ef8f2-e3ba-7001-9099-aa56093a56d0`** (09:25Z, customer-ended, **cost $0.1482** ≤ $1 cap, 21 messages) — the first
+call after the OQ-VOICE-1 pipeline switch. **Verified from `GET /call` (tool results + transcript), not Aria's voiced claim:**
+- **Pipeline confirmed standard TTS live:** `model openai/gpt-4o`, `voice openai/shimmer`, `transcriber deepgram/nova-2`.
+- **Fragmentation FIXED** (the switch's purpose): Aria's utterances are whole, complete sentences; **`interrupted: 0`**. The
+  pre-switch chopping (`"...calls per"`, stranded fragments) is gone.
+- **Real booking end-to-end:** `check_availability` → real slots; `book_meeting` → `{"ok": true, "event_id":
+  "ecFPyLMFsbohwue3si1GML", "slot_key": "2026-06-24T11:30:00+00:00"}` (a REAL Cal.com event, not a phantom); `log_disposition`
+  → `booked`. Disclosure spoken first (byte-exact `firstMessage`). **This satisfies the core deliverable** (disclosure → pitch
+  → discovery → book a real meeting on a live call).
+- **Keeper for the Stage-9 video:** recording at `storage.vapi.ai/019ef8f2-…-mono.wav`.
+**⚠ Remaining issue — lead timezone:** the model **invented `lead_timezone="America/New_York"`** (Asaf is Asia/Jerusalem) →
+slots were *voiced* at odd hours ("7:30 AM" / "3:45 AM Eastern"). The booked slot is really 11:30 UTC = 14:30 Israel — correct
+UTC, wrong spoken tz. `lead_id` was `"lead_id_placeholder"` (expected: a direct demo call to Asaf's number carries no lead
+record). **Next fix (awaiting Asaf's pick):** pin the demo lead tz to Asia/Jerusalem, or have Aria ask the prospect's tz.
+Booking is mechanically correct; this is UX/demo polish, not a governance break.
+
+### 2026-06-24 — Live-review tuning + GRADED disclosure change (recording notice dropped; AI self-id kept)  *(Asaf-directed)*
+After the first successful pipeline call, Asaf's live review drove three changes. Two are tuning; one is a graded contract.
+**Tuning (not graded — `vapi_client` module knobs):**
+- **#1 Speak faster:** OpenAI-TTS `voice.speed` 1.0 → **1.2** (`_TTS_SPEED`) — the agent sounded slow/tiring.
+- **#3 Respond faster:** `startSpeakingPlan.waitSeconds` 0.6 → **0.4** — shorten the lag after the caller stops. (Next lever
+  if still slow: Vapi smart-endpointing.)
+**#2 GRADED — `DISCLOSURE_LINE` + CON3 (Asaf chose: keep the AI self-identification, drop the recording notice, keep
+recording ON):**
+- New literal: **"Hi, this is Aria, an AI assistant calling on behalf of Alta. Do you have a quick minute?"** (dropped
+  "This call may be recorded for quality. "). Updated byte-for-byte in all 5 copies: `app/config.py`, `CLAUDE.md` §9,
+  this NOTES table, `tests/test_voice.py`, `tests/test_env.py`. The **AI self-identification stays** (Asaf chose option A
+  on the human-vs-AI fork — legal disclosure retained).
+- **CON3 reframed:** recording is no longer gated on a *spoken recording notice*; `recordingEnabled` stays **True** (the
+  Stage-9 video needs the audio) and ships in the same payload as the AI disclosure. **Compliance scope (surfaced +
+  accepted):** recording without a spoken notice is lawful only under **one-party consent** — the demo calls go to Asaf's
+  **own consented Israeli test line** (Israel = one-party consent). **A recording notice MUST be restored before any
+  two-party-consent jurisdiction / real-prospect deployment.** Updated `CLAUDE.md` §3/§3.3/§5 Policy 2, `QA_checklist.md`
+  CON3, `app/vapi_client.py` comment, `tests/test_voice.py` CON3 docstrings, `data/value_prop.md` (Aria no longer cites a
+  "recorded-disclosure" — Policy 4), `docs/STAGE9_STORYBOARD.md`.
+**Verified (PM-run against live code):** suite **433 green** (425 + 7 inspect-call + 1 pacing); the shipping payload carries
+the new `firstMessage` (== config const, no "record", still "AI assistant"), `recordingEnabled=True`, `voice.speed=1.2`,
+`waitSeconds=0.4`. **Graded-contract change** → an independent review is owed before this batch is committed (per the
+corrected post-Stage-4 process). Not yet committed (commit on Asaf's word).
+
+### 2026-06-24 — STANDING RULE + Bug-2 `qualify` order-of-operations (Asaf)
+**STANDING RULE (now in force, all bugs):** *No bug is "closed" until a live transcript proves it AND the offline eval
+guards it.* Hold the commit until the live test passes. An offline-green suite proves nothing about live behavior for an
+**unenforced** tool — unlike the disclosure (platform static-first-message, forced), the model is NOT forced to call
+`qualify`, so only a real call shows whether it fires.
+**Bug-2 `qualify` — built + PM-verified (458 green) but NOT closed.** Required order before done:
+1. **Live test FIRST** — a real call where gpt-4o actually calls `qualify` and tailors the pitch; score that real transcript
+   with `pitch_tailored`. Tooling built this session: `scripts/score_call.py` + `make score CALL_ID=…` reports
+   `qualify_fired`, the answer, the emphasized value-prop, the **qualify round-trip latency**, and the `pitch_tailored`
+   verdict — gated on qualify actually firing (no fuzzy fake verdict). Validated on a pre-qualify call (correctly reports
+   not-fired). *To distinguish tailoring from the old canned pitch, the live discovery answer should be a NON-scale pain
+   (e.g. consistency/compliance) — the canned pitch was already scale-shaped.*
+2. **Then wire into the eval** — make the offline `DialogRunner` call `qualify` and put `pitch_tailored` into the persona
+   matrix/bake-off (today the tool + guard only pass in isolation — the exact "tested in isolation, not in the flow" gap).
+   **Asaf: do NOT add a junk_answerer persona.**
+3. **Then independent review + commit** — NOT before the live test. A graded change that passes review but doesn't fire
+   live is worthless.
+**Three items ON THE PLAN (not deferred to the video):**
+- **Bug 1 (slot rejection → collapse)** — untouched, the worse bug for a booking agent. Add a slot **re-offer loop** in BOTH
+  the live prompt AND the offline FSM (call `check_availability`, offer real alternatives; only a "no" to the *meeting* — not
+  the *time* — is terminal) + a `slot_rejecter` persona + a re-offer rubric signal.
+- **lead_id placeholder** — the live call booked with `lead_id="lead_id_placeholder"`; a real defect, not polish. Thread the
+  lead record / an authoritative `lead_id` in at the **webhook chokepoint** (same injection pattern as calendar/clock in
+  `tools.dispatch`).
+- **Latency reconciliation** — `qualify` adds a blocking mid-call round-trip while the other workstream tunes for speed
+  ("Aria sounds slow"). Decide the tradeoff: is the tool worth the hop, or do we get the same branch from a **prompt
+  instruction + the `pitch_tailored` guard** with no extra round-trip? The live test's `qualify_latency_s` informs this.
+
+### 2026-06-24 — Stage 8.5: adversarial / load testing architecture (100+ tester fleet)  *(Asaf-directed; PM-built + verified)*
+**Context:** Asaf is orchestrating a LangGraph workflow with 100+ parallel tester agents against the live agent and
+asked for a zero-blind-spot testing architecture across 4 scopes (logic/RAG/state text-bypass · telephony/audio ·
+latency/STT-TTS · concurrency/load). **PM-surfaced graded-contract collision (the core PM call):** a 100+-parallel
+fleet against the *live* Vapi/Twilio bridge breaches `HARD_BUDGET_USD=$50`, `MAX_LIVE_CALLS=6`, the single-number
+consent allowlist, and the documented cross-process budget TOCTOU. **Resolution:** route the fan-out to an OFFLINE
+deterministic harness + a LOCAL MOCK-BRIDGE; keep real telephony in a small, gated lane.
+**Decisions (Asaf, via planning):** scope = doc + OFFLINE harness extensions + MOCK-BRIDGE; **live lane AUTHORIZED
+(graded change)** — sequential, **≤50 calls / ≤$15** (reuses `LIVE_CALL_BUDGET_USD`; `$50` hard cap + `$1`/call
+unchanged), across **2–3 consented numbers**.
+**Graded changes (OWED an independent review before commit — corrected post-Stage-4 process):** new §9 constant
+`MAX_LIVE_STRESS_CALLS = 50` (config + CLAUDE.md §9 + this NOTES table); additive read-only `budget.default_ledger_path()`
+accessor (no guard-signature change); the live lane (`scripts/stress_live.py`). **Recording-notice compliance gate**
+(precondition to any live call): confirm the 2–3 added numbers are all one-party-consent, or restore the recording
+notice in `DISCLOSURE_LINE` (CON3) — halt to Asaf.
+**Built (PM, offline — additive, no graded interface signature touched):** 2 adversarial `Persona`s (`INJECTION`,
+`SLOT_REJECTER`) — NOT in `bakeoff.PERSONA_MATRIX`, so the graded bake-off/eval numbers are unchanged; a standalone
+computed `rubric.slot_reoffer_handled` (NOT a 6th `RubricResult` field — the 0–5 EVAL3 score contract is intact);
+`app/testing/mock_bridge.py` (webhook+transcript fault injector — NOT a softphone; the media path is Vapi's);
+`scripts/stress_live.py` (injectable `run_stress_lane` core + gated `main`); `tests/test_stress_{logic,concurrency,
+telephony,latency,live_lane}.py`; `docs/STRESS_TEST_ARCHITECTURE.md`.
+**Deviation from the approved plan (honest):** dropped the cosmetic `FILIBUSTER`/`TOPIC_THRASH`/`CONTRADICTION`
+personas — the finite-stage templated `DialogRunner` does not branch on callee topic and cannot model an infinite
+conversation, so they would not produce distinct transcripts. The turn-cap is driven via `max_turns` (STR-L1),
+topic/contradiction via crafted transcripts + `tools.dispatch` (STR-L7/L9) — more faithful than adding inert enum
+members. `STR-L11` ships an `xfail(strict)` end-to-end guard that flips green when the Bug-1 re-offer loop lands.
+**Verified facts (PM-run, not assumed):** full suite **522 passed / 1 skipped / 1 xfailed** (baseline 474; the skip
+is the live-only barge-in `STR-T1`, the xfail is the Bug-1 re-offer guard); deterministic; `ENV4` re-proven from an
+empty cwd across the new modules (`app.testing.mock_bridge`, `scripts.stress_live`) — lazy singletons `None`, httpx
+not pulled; `MAX_LIVE_STRESS_CALLS == 50`. The cross-process budget TOCTOU is now **pinned by a deterministic test**
+(`STR-C7`: two ledgers on one state file under-count) — the reason the live lane must be sequential.
+**Owed / next:** independent review of the graded change → commit (on Asaf's word; tree currently also carries a prior
+uncommitted qualify/disclosure batch — keep the two separable); then the human-coordinated live stress run after the
+recording-notice gate clears. The LangGraph fan-out runner + a real RTP/softphone bridge are deliberately out of scope.

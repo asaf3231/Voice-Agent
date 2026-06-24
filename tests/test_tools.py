@@ -33,7 +33,6 @@ from app.tools import (
     check_availability,
     detect_voicemail,
     dispatch,
-    end_call,
     log_disposition,
 )
 
@@ -266,24 +265,21 @@ class TestTool4DetectVoicemail:
 
 
 # ---------------------------------------------------------------------------
-# TOOL5 — end_call + dispatch identity
+# TOOL5 — dispatch identity (end_call retired: termination is Vapi-native now)
 # ---------------------------------------------------------------------------
 
 class TestTool5EndCallAndDispatch:
-    def test_end_call_clean_hangup(self):
-        res = end_call()
-        assert res.ok
-        assert res.data["ended"] is True
-        assert res.data["reason"] == "completed"
-
-    def test_end_call_custom_reason(self):
-        res = end_call(reason="turn_cap")
-        assert res.data["reason"] == "turn_cap"
+    def test_end_call_is_not_a_dispatchable_tool(self):
+        """`end_call` is retired — the live agent ends via Vapi's native end-call,
+        not a custom function (which never actually hung up — D9)."""
+        assert "end_call" not in TOOL_REGISTRY
+        assert "end_call" not in AGENT_TOOLS
+        assert dispatch("end_call").error == "unknown_tool"
 
     def test_registry_keys_equal_agent_tools(self):
         """The dispatch registry keys are EXACTLY AGENT_TOOLS (TOOL5)."""
         assert set(TOOL_REGISTRY.keys()) == set(AGENT_TOOLS)
-        assert len(TOOL_REGISTRY) == len(AGENT_TOOLS) == 5
+        assert len(TOOL_REGISTRY) == len(AGENT_TOOLS) == 4
 
     def test_every_agent_tool_dispatchable(self, calendar, frozen_clock):
         """Every AGENT_TOOLS name routes to a callable that returns a ToolResult."""
@@ -296,7 +292,6 @@ class TestTool5EndCallAndDispatch:
             },
             "log_disposition": {"lead_id": "lead-001", "disposition": "booked"},
             "detect_voicemail": {"transcript": "hello"},
-            "end_call": {},
         }
         for name in AGENT_TOOLS:
             res = dispatch(name, **kwargs_by_tool[name])

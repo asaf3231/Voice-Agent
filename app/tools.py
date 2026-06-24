@@ -129,12 +129,31 @@ def _resolve_zone(tz_name: str | None) -> ZoneInfo | timezone:
         return SALES_CALENDAR_TZ
 
 
-def _slot_to_payload(slot: Slot, lead_zone: ZoneInfo | timezone) -> dict[str, Any]:
-    """Render a slot for the agent: BOTH the calendar-tz time and the lead-local time.
+def _format_say(lead_start: datetime) -> str:
+    """A ready-to-speak slot label, the BARE time in the lead's local tz (D2 fix).
 
-    The lead-local rendering is what the agent voices ("3pm your time"); the
-    calendar-tz value is the authoritative booking time. Carrying both is the
-    explicit tz resolution the grader checks (no "3pm in the wrong tz").
+    The agent voices this string VERBATIM so it can't pick the UTC field or compute a
+    time itself. No "your time" / tz suffix: the agent repeated it on every slot and it
+    was verbose (Asaf note 2026-06-24, "we don't need that"). The time is still computed
+    in the lead's resolved timezone — it is just stated plainly.
+    OS-agnostic formatting (no platform-specific %- directives).
+    Example: "Tuesday, June 30 at 4:45 PM".
+    """
+    hour12 = lead_start.hour % 12 or 12
+    ampm = "AM" if lead_start.hour < 12 else "PM"
+    return (
+        f"{lead_start.strftime('%A')}, {lead_start.strftime('%B')} {lead_start.day} "
+        f"at {hour12}:{lead_start.minute:02d} {ampm}"
+    )
+
+
+def _slot_to_payload(slot: Slot, lead_zone: ZoneInfo | timezone) -> dict[str, Any]:
+    """Render a slot for the agent: the calendar-tz time, the lead-local time, AND a
+    ready-to-speak `say` string in the lead's local time.
+
+    The `say` field is what the agent voices; the calendar-tz value is the
+    authoritative booking time. Carrying both + a pre-formatted string is the
+    explicit tz resolution the grader checks (no "3pm in the wrong tz", D2).
     """
     cal_start = slot.start.astimezone(SALES_CALENDAR_TZ)
     lead_start = slot.start.astimezone(lead_zone)
@@ -144,6 +163,7 @@ def _slot_to_payload(slot: Slot, lead_zone: ZoneInfo | timezone) -> dict[str, An
         "end_utc": slot.end.astimezone(SALES_CALENDAR_TZ).isoformat(),
         "start_lead_local": lead_start.isoformat(),
         "lead_tz": str(getattr(lead_zone, "key", lead_zone)),
+        "say": _format_say(lead_start),
     }
 
 
@@ -317,16 +337,161 @@ def detect_voicemail(
     )
 
 
-# ===========================================================================
-# Tool 5 — end_call  (TOOL5)
-# ===========================================================================
+# NOTE: there is no `end_call` tool. Ending the call is pinned to Vapi's NATIVE
+# end-call (endCallFunctionEnabled) + the byte-exact END_CALL_MESSAGE — a custom
+# function returning JSON never actually terminated the call (D9, 2026-06-24).
 
-def end_call(*, reason: str = "completed") -> ToolResult:
-    """Signal a clean hangup with a structured reason (TOOL5).
 
-    Never raises — ending the call is always a safe terminal (§6 / Policy 6).
+# ===========================================================================
+# Internal helper — qualify  (Bug 2 tailoring oracle; NOT a dispatched live tool)
+# ===========================================================================
+# Routes a discovery answer → the grounded value-prop to emphasize. Kept as a pure,
+# deterministic function so rubric.pitch_tailored can use it as the offline tailoring
+# oracle; the LIVE agent does the same tailoring inline via the system prompt (no tool
+# round-trip — Asaf decision 2026-06-24 after a ~2.5s live latency hit).
+
+# Pain-theme → trigger keywords found in a PROSPECT'S ANSWER. This is classification
+# logic, NOT Alta business content — the assertable value-prop TEXT still comes ONLY
+# from value_prop.md (LEAK3). Each theme's anchor words also appear in the value-prop
+# it routes to, so _select_value_prop picks the grounded match from the file.
+_QUALIFY_THEMES: dict[str, tuple[str, ...]] = {
+    "scale": (
+        "scale", "scaling", "volume", "manual", "manually", "by hand", "hundreds",
+        "headcount", "capacity", "bandwidth", "keep up", "more calls", "sdr",
+        "sdrs", "reps", "hiring", "outreach", "throughput",
+    ),
+    "consistency": (
+        "consistent", "consistency", "messaging", "off script", "off-script",
+        "playbook", "script", "inconsistent", "varies",
+    ),
+    "quality": (
+        "robotic", "robocall", "robo", "natural", "sound", "human", "conversation",
+        "rapport", "tone",
+    ),
+    "compliance": (
+        "compliance", "compliant", "dnc", "do not call", "do-not-call", "legal",
+        "regulation", "regulatory", "tcpa", "consent",
+    ),
+    "integration": (
+        "crm", "salesforce", "hubspot", "integrate", "integration", "set up",
+        "setup", "onboarding", "implementation", "it team", "it lift",
+    ),
+}
+
+
+def _qualify_match_themes(answer_low: str) -> list[str]:
+    """Return the pain themes whose trigger keywords appear in *answer_low*."""
+    return [
+        theme for theme, kws in _QUALIFY_THEMES.items()
+        if any(kw in answer_low for kw in kws)
+    ]
+
+
+def _qualify_theme_hits(theme: str, answer_low: str) -> int:
+    return sum(1 for kw in _QUALIFY_THEMES[theme] if kw in answer_low)
+
+
+def _qualify_select_value_prop(
+    theme: str, value_props: tuple[str, ...]
+) -> str | None:
+    """Pick the value-prop whose text best matches *theme*'s keywords (grounded)."""
+    best, best_score = None, 0
+    for vp in value_props:
+        low = vp.lower()
+        score = sum(1 for kw in _QUALIFY_THEMES[theme] if kw in low)
+        if score > best_score:
+            best, best_score = vp, score
+    return best
+
+
+def _load_value_props_for_qualify() -> tuple[str, ...]:
+    """Lazily parse the value-prop file's items (LEAK3; never read at import)."""
+    from app.persona import load_value_prop  # lazy: no cycle, no import-time file read
+    return load_value_prop().value_props
+
+
+def qualify(
+    *,
+    answer: str,
+    value_props: tuple[str, ...] | None = None,
+) -> ToolResult:
+    """Route a prospect's discovery answer to the grounded value-prop to emphasize.
+
+    Turns "tailor the pitch to what they say" into an explicit, deterministic,
+    logged decision (Bug 2 — CTO review 2026-06-24). Returns the matched pain
+    theme(s), the single value-prop to lead with (ALWAYS one of the value-prop
+    file's items — never invented here, LEAK3), and whether the answer was too vague or
+    empty to route — so the agent asks ONE clarifying question instead of pitching
+    a canned script on a non-answer.
+
+    Called by rubric.pitch_tailored with the prospect's answer; the value-prop content
+    is loaded from the file at runtime (or injected for tests). Never raises (§6).
     """
-    return ToolResult(ok=True, data={"ended": True, "reason": reason})
+    a = (answer or "").strip()
+    if not a:
+        return ToolResult(ok=True, data={
+            "answer_quality": "empty",
+            "matched_themes": [],
+            "emphasize": None,
+            "needs_clarification": True,
+            "guidance": (
+                "The prospect did not actually answer. Ask ONE short, friendly "
+                "clarifying question about their current outbound — do NOT pitch yet."
+            ),
+        })
+
+    low = a.lower()
+    themes = _qualify_match_themes(low)
+
+    if not themes:
+        return ToolResult(ok=True, data={
+            "answer_quality": "vague",
+            "matched_themes": [],
+            "emphasize": None,
+            "needs_clarification": True,
+            "guidance": (
+                "The answer is vague or off-topic — it names no clear need. Ask ONE "
+                "short clarifying question to surface their outbound pain before "
+                "pitching. Do NOT launch the value-prop on a non-answer."
+            ),
+        })
+
+    if value_props is None:
+        value_props = _load_value_props_for_qualify()
+
+    # Primary theme = the one with the most keyword hits (stable: dict order on ties).
+    primary = max(themes, key=lambda t: _qualify_theme_hits(t, low))
+    emphasize = _qualify_select_value_prop(primary, value_props)
+
+    if emphasize is None:
+        # A theme keyword matched the answer, but NO value-prop on file grounds it
+        # (best_score == 0). Do NOT report a substantive route with a null emphasis:
+        # that previously told the live agent to "lead with ONLY this value-prop: None"
+        # and made rubric.pitch_tailored pass vacuously on a true routing miss
+        # (independent review 2026-06-24). Ask to clarify instead of pitching nothing.
+        return ToolResult(ok=True, data={
+            "answer_quality": "unmapped",
+            "matched_themes": themes,
+            "emphasize": None,
+            "needs_clarification": True,
+            "guidance": (
+                f"They hinted at a '{primary}' need, but no value-prop on file directly "
+                "addresses it. Ask ONE short clarifying question to pin down their pain — "
+                "do NOT pitch an ungrounded claim."
+            ),
+        })
+
+    return ToolResult(ok=True, data={
+        "answer_quality": "substantive",
+        "matched_themes": themes,
+        "emphasize": emphasize,
+        "needs_clarification": False,
+        "guidance": (
+            f"They raised a '{primary}' need. Reflect their own words back, then lead "
+            "with ONLY this value-prop (not the whole list), then make the meeting "
+            f"ask: {emphasize}"
+        ),
+    })
 
 
 # ===========================================================================
@@ -338,8 +503,10 @@ TOOL_REGISTRY: dict[str, Callable[..., ToolResult]] = {
     "book_meeting": book_meeting,
     "log_disposition": log_disposition,
     "detect_voicemail": detect_voicemail,
-    "end_call": end_call,
 }
+# Deliberately absent (retired 2026-06-24): `end_call` (Vapi NATIVE end-call replaces
+# the custom no-op) and `qualify` (internal tailoring oracle for rubric.pitch_tailored,
+# not a dispatched live tool — tailoring is done inline by the system prompt).
 
 # Import-time identity guard: name == AGENT_TOOLS entry == dispatch key (TOOL5).
 # A rename/typo fails fast at import, not at runtime mid-call.
@@ -360,6 +527,9 @@ assert all(callable(fn) for fn in TOOL_REGISTRY.values()), (
 # returned `invalid_input` ("missing keyword-only argument 'calendar'") and NO
 # meeting could ever be booked over the wire, defeating the core deliverable.
 _CALENDAR_TOOLS = frozenset({"check_availability", "book_meeting"})
+# Tools whose lead_id is INFRASTRUCTURE, injected authoritatively by the runtime —
+# never trusted from the model (D3 fix: the model fabricated "lead_id_placeholder").
+_LEAD_ID_TOOLS = frozenset({"book_meeting", "log_disposition"})
 
 
 def dispatch(
@@ -368,6 +538,8 @@ def dispatch(
     *,
     calendar: CalendarProvider | None = None,
     now: datetime | None = None,
+    lead_id: str | None = None,
+    lead_timezone: str | None = None,
     **kwargs: Any,
 ) -> ToolResult:
     """Route a tool-call by name to its function (the single dispatch point).
@@ -390,6 +562,13 @@ def dispatch(
             message=f"no such tool {name!r}; known: {sorted(TOOL_REGISTRY)}",
         )
 
+    # Self-defending chokepoint: lead_id / lead_timezone are infrastructure the model
+    # never owns. Strip any that arrived in the model args so (a) they can't collide
+    # with the authoritative explicit params below and (b) the override is enforced
+    # HERE, not only in the webhook caller.
+    kwargs.pop("lead_id", None)
+    kwargs.pop("lead_timezone", None)
+
     # Inject runtime infrastructure the model cannot (and must not) supply.
     if name in _CALENDAR_TOOLS:
         if calendar is None:
@@ -401,6 +580,14 @@ def dispatch(
         kwargs["calendar"] = calendar
         if name == "check_availability":
             kwargs["now"] = now if now is not None else datetime.now(SALES_CALENDAR_TZ)
+            # Authoritative lead timezone overrides any model-supplied value (D2).
+            if lead_timezone is not None:
+                kwargs["lead_timezone"] = lead_timezone
+
+    # Authoritative lead_id overrides any model-supplied value (D3) — the model
+    # never decides which lead a booking/disposition is written under.
+    if name in _LEAD_ID_TOOLS and lead_id is not None:
+        kwargs["lead_id"] = lead_id
 
     try:
         return fn(**kwargs)

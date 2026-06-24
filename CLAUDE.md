@@ -193,7 +193,7 @@ Source-of-truth rules:
 Aria runs an **autonomous outbound calling pipeline**: from the synthetic lead list it places a call,
 **opens with the byte-exact disclosure**, pitches Alta's value proposition, qualifies the prospect,
 handles objections, and **books a meeting** on the sales team's calendar — all under hard governance
-(budget, consent, turn cap, recording disclosure).
+(budget, consent, turn cap, AI disclosure).
 
 ### 3.1 Pipeline shape (the happy path)
 ```text
@@ -221,7 +221,7 @@ synthetic lead
 | # | Name | One-line rule |
 |---|---|---|
 | 1 | Budget ceiling | Total spend ≤ `HARD_BUDGET_USD`; per-call ≤ `MAX_COST_PER_CALL_USD`; abort beyond |
-| 2 | Consent / compliance | Dial only allowlisted, consented numbers; speak `DISCLOSURE_LINE` first; record only with disclosure |
+| 2 | Consent / compliance | Dial only allowlisted, consented numbers; speak `DISCLOSURE_LINE` first (AI self-id); recording on — spoken notice dropped 2026-06-24, one-party-consent scope (§5 Policy 2) |
 | 3 | Turn / time caps | ≤ `MAX_AGENT_TURNS` turns and ≤ `MAX_CALL_DURATION_S` per call → failsafe hangup |
 | 4 | Authoritative content bound | The agent cites only `data/value_prop.md` / lead facts — never invents Alta claims, pricing, or commitments |
 | 5 | Booking integrity | A meeting is booked only via `book_meeting` against real availability; no double-book, no phantom booking |
@@ -265,7 +265,12 @@ Each policy has a dedicated QA section. **Policies are enforced at a single chok
 - Only numbers on the **consent allowlist** (an untracked file / env, not committed) may be dialed;
   every other number is refused with a structured result, never dialed. `do_not_call` is also honored.
 - `DISCLOSURE_LINE` is spoken **first** on every call, **byte-exactly** (the one graded literal —
-  analog to a strict-string contract). Recording is enabled only when the disclosure is delivered.
+  analog to a strict-string contract). **Recording posture (2026-06-24, Asaf decision):** the spoken
+  *recording notice* ("This call may be recorded…") was **removed** from `DISCLOSURE_LINE` — the **AI
+  self-identification stays**. `recordingEnabled` remains **True** (the Stage-9 video needs the audio).
+  This means recording proceeds **without a spoken notice**, which is lawful only under **one-party
+  consent** (the demo calls go to Asaf's own consented Israeli test line); a recording notice **must be
+  restored before any two-party-consent jurisdiction / real-prospect use**. CON3 is updated accordingly.
   **Enforcement (Red-Team 2026-06-23):** because the OpenAI Realtime model *generates* the audio, a
   prompt instruction to "say the disclosure first" could be paraphrased. The disclosure is therefore
   pinned to the voice platform's **static first-message** feature (spoken verbatim by the platform,
@@ -369,7 +374,8 @@ Concretely, **none** of the following may occur — each is grep- or test-enforc
 HARD_BUDGET_USD        = 50.00     # absolute ceiling (the provided card limit)
 LIVE_CALL_BUDGET_USD   = 15.00     # soft reserve for live calls (lean posture)
 MAX_COST_PER_CALL_USD  = 1.00      # per-call projected-cost ceiling
-MAX_LIVE_CALLS         = 6         # lean live eval-set ceiling
+MAX_LIVE_CALLS         = 6         # lean live eval-set ceiling (the normal demo path)
+MAX_LIVE_STRESS_CALLS  = 50        # bounded LIVE STRESS-lane count ceiling (scripts/stress_live.py; Asaf-authorized 2026-06-24; sequential; spend still bounded by LIVE_CALL_BUDGET_USD=$15 + the unchanged $50 hard cap + $1/call)
 BUDGET_ALARM_ROUNDING_MARGIN = Decimal("0.01")  # post-hoc over-cap alarm tolerance in record_cost (F1 2026-06-23; the pre-call gate budget_permits is exact and does NOT use this)
 
 # --- call governance ---
@@ -396,11 +402,11 @@ VOICE_PROVIDER         = "vapi"                       # managed; Retell-swappabl
 RANDOM_SEED            = 42
 
 # --- byte-exact graded literals ---
-DISCLOSURE_LINE        = "Hi, this is Aria, an AI assistant calling on behalf of Alta. This call may be recorded for quality. Do you have a quick minute?"
+DISCLOSURE_LINE        = "Hi, this is Aria, an AI assistant calling on behalf of Alta. Do you have a quick minute?"   # recording notice dropped 2026-06-24 (Asaf); AI self-id retained; recording stays on — one-party-consent scope (see §5 Policy 2)
 FAILSAFE_HANGUP_LINE   = "Thanks for your time — I'll follow up by email. Goodbye."
 
 # --- the agent's callable functions (name == schema name == dispatch key) ---
-AGENT_TOOLS = ["check_availability", "book_meeting", "log_disposition", "detect_voicemail", "end_call"]
+AGENT_TOOLS = ["check_availability", "book_meeting", "log_disposition", "detect_voicemail"]  # 2026-06-24: `end_call` retired (custom fn never hung up → Vapi NATIVE end-call + END_CALL_MESSAGE); `qualify` (Bug 2) is an internal tailoring oracle, NOT a live tool (tailoring done inline by the prompt)
 ```
 
 - The voice-provider interface (`VoiceProvider`: `configure_assistant`, `place_call`,

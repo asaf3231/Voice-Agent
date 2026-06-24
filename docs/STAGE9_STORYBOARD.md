@@ -8,7 +8,7 @@
 
 ## Segment 1 — What it is (~45s)
 - One line: *"Aria is an autonomous outbound voice agent that calls a prospect, pitches Alta, and
-  books a meeting — under hard governance: consent, a byte-exact recording disclosure, turn/time
+  books a meeting — under hard governance: consent, a byte-exact AI disclosure, turn/time
   caps, and a hard $50 budget."*
 - Show the repo tree (the §2 layout): `app/` (config, persona, tools, vapi_client, server, budget,
   consent, calendar_client, orchestrate, eval/), `data/` synthetic inputs, `tests/`, `scripts/`.

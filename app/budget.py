@@ -305,6 +305,16 @@ def get_ledger() -> BudgetLedger:
     return _ledger
 
 
+def default_ledger_path() -> Path:
+    """Return the default persistent ledger state file path (gitignored).
+
+    A read-only accessor so a second live entry point (e.g. scripts/stress_live.py)
+    can construct a ledger on the SAME persisted state — sharing one cumulative total
+    under the $50 hard cap — without reaching into a module-private. No I/O here.
+    """
+    return _LEDGER_STATE_PATH
+
+
 def reset_ledger(*, also_delete_state_file: bool = False) -> None:
     """Reset the singleton (test helper — do NOT call in production code).
 

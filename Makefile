@@ -8,7 +8,7 @@ PIP    := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
 UVICORN := $(VENV)/bin/uvicorn
 
-.PHONY: install test serve call preflight
+.PHONY: install test serve call preflight inspect score
 
 ## install — create .venv and install all pinned deps
 install:
@@ -48,3 +48,23 @@ ifndef TO
 else
 	$(VENV)/bin/python scripts/place_demo_call.py $(TO)
 endif
+
+## inspect — print a live call's timestamped transcript + interruption markers
+## Read-only diagnostic for the live call experience (e.g. "not finishing sentences":
+## look for ARIA lines flagged (INTERRUPTED)). Needs VAPI_API_KEY in .env.
+## Usage: make inspect CALL_IDS="019ef883 019ef86c"
+inspect:
+ifndef CALL_IDS
+	@echo "ERROR: 'make inspect' requires one or more Vapi call ids."
+	@echo "Usage: make inspect CALL_IDS=\"019ef883 019ef86c\""
+	@exit 1
+else
+	$(VENV)/bin/python scripts/inspect_call.py $(CALL_IDS)
+endif
+
+## score — Bug-2 live proof: did the agent CALL qualify + tailor the pitch?
+## Scores a real call with rubric.pitch_tailored + reports the qualify round-trip
+## latency. Newest call if CALL_ID is omitted. Needs VAPI_API_KEY in .env.
+## Usage: make score CALL_ID=019ef90c-...   (or just: make score)
+score:
+	$(VENV)/bin/python scripts/score_call.py $(CALL_ID)
