@@ -222,7 +222,7 @@ PM's own eyes) before the stage is marked ✅/committed** — the inline shortcu
 | `ANSWER_DETECTION_S` | `20` | Ring/answer timeout |
 | `BOOKING_SLOT_MINUTES` | `30` | Meeting length |
 | `BOOKING_LOOKAHEAD_DAYS` | `10` | How far ahead booking offers slots |
-| `REALTIME_MODEL` | `"gpt-4o-realtime-preview"` | ⚠ pin exact id at Stage 1 install (`OQ-VOICE-1`) |
+| `REALTIME_MODEL` | `"gpt-realtime-2025-08-28"` | OpenAI Realtime id; reconciled 2026-06-24 to Vapi's accepted set (was `gpt-4o-realtime-preview`, rejected by Vapi `/call`) — `OQ-VOICE-1`/`ENV2` |
 | `VOICE_PROVIDER` | `"vapi"` | Managed platform; Retell-swappable via the adapter |
 | `RANDOM_SEED` | `42` | Determinism seed for all stochastic offline components |
 
@@ -240,7 +240,7 @@ PM's own eyes) before the stage is marked ✅/committed** — the inline shortcu
 
 | ID | Question | Owner | Status |
 |---|---|---|---|
-| `OQ-VOICE-1` | Exact OpenAI realtime model id string (`REALTIME_MODEL`) | Asaf/PM | ✅ Resolved 2026-06-23 — `gpt-4o-realtime-preview` (verify at install, `ENV2`) |
+| `OQ-VOICE-1` | Exact OpenAI realtime model id string (`REALTIME_MODEL`) | Asaf/PM | ✅ Resolved 2026-06-23; **`ENV2` reconciled 2026-06-24 → `gpt-realtime-2025-08-28`** (Vapi rejected the undated `gpt-4o-realtime-preview`) |
 | `OQ-VOICE-2` | Vapi vs Retell final pick (adapter keeps it cheap) | PM | ✅ Resolved 2026-06-23 — **Vapi** primary; Adapter Pattern mandatory (Retell-ready) |
 | `OQ-VOICE-3` | Calendar backend for booking: Cal.com vs Google Calendar | Asaf | ✅ Resolved 2026-06-23 — **Cal.com API** + deterministic local mock (avoid Google OAuth) |
 | `OQ-VOICE-4` | Are consented test numbers available, and how many? | Asaf | ✅ Resolved 2026-06-23 — **3** internal numbers, whitelisted with consent |
@@ -601,3 +601,9 @@ absent). Suite **419 green**.
 (1) `VAPI_WEBHOOK_SECRET` reads as **MISSING** (likely still commented / misnamed / spaces around `=`); (2) the consent
 allowlist isn't found at the repo-root default path (place `consent_allowlist.json` at the root or set
 `CONSENT_ALLOWLIST_PATH`). **`make preflight` must say PASSED before any live call.**
+
+### 2026-06-24 — REALTIME_MODEL reconciled at live install: `gpt-4o-realtime-preview` → `gpt-realtime-2025-08-28`  *(Asaf — §9 graded-constant change)*
+**Decision:** The first live `make call` returned **HTTP 400 from Vapi `/call`**: *"assistant.model.model must be one of …"* — Vapi only accepts **dated** realtime ids; our locked `OQ-VOICE-1` value `"gpt-4o-realtime-preview"` (an undated pre-install guess) is **not accepted**. This is exactly the reconciliation `ENV2` was designed to force. Asaf chose the **current GA** realtime model **`gpt-realtime-2025-08-28`** (over the dated `gpt-4o-realtime-preview-2024-12-17` and the cheaper `gpt-realtime-mini-2025-12-15`).
+**Why GA:** newest + most capable, best latency/quality for a live voice demo; per-minute cost is modest, a 2–3 min test call stays well under the $1/call cap. We stay on a **realtime (speech-to-speech)** id — the standard chat models in Vapi's list (gpt-5.x / gpt-4o / o3 …) are not speech-to-speech and would break the low-latency turn-taking that OQ-VOICE-1 chose.
+**Applied (graded constant — Asaf-authorized):** `app/config.py` + `CLAUDE.md` §9 + this NOTES table + the OQ-VOICE-1 row; tests updated (`test_env.py` realtime-constant, `test_voice.py` VOICE1 model assertion). Also **widened `place_call`'s Vapi-error capture** (status line → response body, 2000 chars) so any *further* payload-validation errors surface in full on the next attempt. **No other graded contract touched** (disclosure-first byte-exact, recording-gated CON3, the 5 tools, the interface signatures all unchanged).
+**Watch:** Vapi validates strictly and the 400 body was truncated — there may be 1–2 more payload tweaks after the model (e.g. `recordingEnabled`/`metadata` placement). The widened capture will reveal them; any such fix stays within the VOICE1 graded contract + independent review before retry.

@@ -73,7 +73,7 @@ BOOKING_SLOT_MINUTES: int = 30
 BOOKING_LOOKAHEAD_DAYS: int = 10
 
 # --- providers / models / determinism ---
-REALTIME_MODEL: str = "gpt-4o-realtime-preview"  # OQ-VOICE-1 LOCKED (ENV2)
+REALTIME_MODEL: str = "gpt-realtime-2025-08-28"  # OQ-VOICE-1; reconciled to Vapi's accepted realtime id (ENV2, 2026-06-24, Asaf)
 VOICE_PROVIDER: str = "vapi"                      # managed; Retell-swappable
 RANDOM_SEED: int = 42
 

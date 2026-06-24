@@ -55,10 +55,11 @@ class TestEnv2PinnedDeps:
             assert pkg in content, f"'{pkg}' not found in requirements.txt"
 
     def test_realtime_model_constant(self):
-        """REALTIME_MODEL is the locked value 'gpt-4o-realtime-preview' (OQ-VOICE-1)."""
+        """REALTIME_MODEL is the locked value 'gpt-realtime-2025-08-28' (OQ-VOICE-1,
+        reconciled 2026-06-24 to Vapi's accepted realtime id; ENV2)."""
         from app.config import REALTIME_MODEL
-        assert REALTIME_MODEL == "gpt-4o-realtime-preview", (
-            f"REALTIME_MODEL is '{REALTIME_MODEL}', expected 'gpt-4o-realtime-preview'"
+        assert REALTIME_MODEL == "gpt-realtime-2025-08-28", (
+            f"REALTIME_MODEL is '{REALTIME_MODEL}', expected 'gpt-realtime-2025-08-28'"
         )
 
     def test_every_third_party_import_is_pinned(self):

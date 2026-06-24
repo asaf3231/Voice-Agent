@@ -332,7 +332,13 @@ class VapiVoiceProvider:
                     "assistant": assistant,
                 },
             )
-            resp.raise_for_status()
+            if resp.status_code >= 400:
+                # Surface Vapi's error BODY (the actionable reason — e.g. an
+                # invalid assistant-payload field), not just the status line.
+                return CallResult(
+                    ok=False, error="vapi_error",
+                    message=f"HTTP {resp.status_code} from Vapi /call: {resp.text[:2000]}",
+                )
             data = resp.json()
             call_id = str(data.get("id") or "")
             if not call_id:
@@ -347,7 +353,11 @@ class VapiVoiceProvider:
         try:
             client = _get_vapi()
             resp = client.get(f"/call/{call_id}")
-            resp.raise_for_status()
+            if resp.status_code >= 400:
+                return CostResult(
+                    ok=False, error="vapi_error",
+                    message=f"HTTP {resp.status_code} from Vapi /call/{call_id}: {resp.text[:500]}",
+                )
             data = resp.json()
             raw_cost = data.get("cost")
             if raw_cost is None:

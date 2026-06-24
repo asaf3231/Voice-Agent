@@ -43,7 +43,7 @@ class TestVoice1AssistantConfig:
     def test_wires_realtime_model(self, assistant):
         """The pinned REALTIME_MODEL is the assistant's model id (ENV2 cross-check)."""
         assert assistant["model"]["model"] == REALTIME_MODEL
-        assert assistant["model"]["model"] == "gpt-4o-realtime-preview"
+        assert assistant["model"]["model"] == "gpt-realtime-2025-08-28"
 
     def test_system_prompt_present_and_grounded(self, assistant):
         """A non-empty system prompt is wired, grounded in the value-prop content."""

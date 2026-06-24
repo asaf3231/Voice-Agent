@@ -472,6 +472,24 @@ Watch out for / open: **budget-persistence HIGH (Stage-8 blocker, Asaf decision)
 the Cal.com 409-only idempotency + the live Vapi signature header/payload field names still need live reconciliation;
 recurring mid-stage crashes — re-verify disk vs ledger on resume.
 
+## 2026-06-24 ~09:50 — [VOICE] SESSION (live execution day) — webhook chain up + REALTIME_MODEL reconciled
+Live-execution support + one graded-contract reconciliation:
+- **Webhook chain verified end-to-end (the Stage-4 owed deliverable, now live):** resolved a port-8000 collision —
+  a stale **CRM** dev server (`api_server:app`, PID 59042, orphaned to launchd since Jun 20) was squatting
+  `127.0.0.1:8000` and shadowing our `make serve`; killed it (Asaf-approved). ngrok reconciled to forward `:8000`
+  (was `:80`). Verified: local + public `/health` 200; **signed webhook 200 `{"ok":true}` with the correct
+  `x-vapi-secret`, 401 with a wrong one** (fail-closed, over the public tunnel). `make preflight` → PASSED
+  (allowlist = 1 consented number `+972…58`; budget $0/$50). `.env` `VAPI_WEBHOOK_SECRET` fixed by Asaf.
+- **First live `make call` → HTTP 400 from Vapi `/call`:** `assistant.model.model must be one of …` — the locked
+  `REALTIME_MODEL="gpt-4o-realtime-preview"` (undated) is **not accepted** by Vapi (exactly what `ENV2` was meant to
+  catch). **Asaf chose `gpt-realtime-2025-08-28`** (current GA realtime). Applied as a **§9 graded-constant change**
+  (config + CLAUDE.md §9 + NOTES table/OQ row + PLAN; tests updated). Widened `place_call`'s Vapi-error capture
+  (status line → body, 2000 chars) so any further payload errors surface. **Graded invariants verified intact**
+  (firstMessage byte-exact == DISCLOSURE_LINE, recordingEnabled CON3, 5 tools, interface signatures). Suite **419 green**.
+- **Open:** Vapi validates strictly + the 400 body was truncated — the **next** `make call` may surface 1–2 more payload
+  tweaks (e.g. `recordingEnabled`/`metadata` placement); the widened capture will show them. Those would touch the
+  VOICE1 assistant payload → independent review before retry. Committing this checkpoint; awaiting Asaf's next retry.
+
 ## 2026-06-23 21:13 — [VOICE] SESSION START (Asaf decisions → Stage 8 build half)
 Picking up: Asaf answered the two Stage-8 gate questions — **(1) FIX the budget-persistence HIGH now** (persistent
 file-backed ledger), **(2) LIVE0 is READY → proceed to Stage 8**. Stages 0–7 ✅, commits through `7011611`, 387 green.
