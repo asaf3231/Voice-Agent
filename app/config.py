@@ -80,9 +80,9 @@ BOOKING_LOOKAHEAD_DAYS: int = 10
 # Moved off OpenAI realtime speech-to-speech
 # (it fragmented/paused over telephony) to Vapi's standard pipeline — a chat LLM +
 # a dedicated TTS voice + a transcriber — which is robust for phone audio.
-LLM_MODEL: str = "gpt-4o"                         # conversational model (Vapi 'model.model')
-TTS_PROVIDER: str = "openai"                      # TTS uses the existing OpenAI key (no extra provider key)
-TTS_VOICE_ID: str = "shimmer"                     # OpenAI TTS voice (alloy/echo/fable/onyx/nova/shimmer)
+LLM_MODEL: str = "gpt-4o-mini"                    # conversational model (Vapi 'model.model') — faster than gpt-4o to cut reply latency (2026-06-25)
+TTS_PROVIDER: str = "deepgram"                    # Deepgram Aura TTS — low-latency (~200ms TTFB); reuses the Deepgram key already connected for STT (no extra provider key)
+TTS_VOICE_ID: str = "asteria"                     # Deepgram Aura "Asteria" — natural conversational female voice (Vapi wants the BARE voice name, not the aura-…-en model id — live-confirmed 2026-06-25)
 TRANSCRIBER_PROVIDER: str = "deepgram"            # Vapi default STT
 TRANSCRIBER_MODEL: str = "nova-2"
 VOICE_PROVIDER: str = "vapi"                      # managed platform; Retell-swappable

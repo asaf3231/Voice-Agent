@@ -35,19 +35,20 @@ from app.persona import build_system_prompt, load_value_prop
 
 # Turn-taking + pacing tuning (Vapi-specific knobs, not governance).
 #  stopSpeakingPlan: brief backchannels ("okay", "mm-hm") / line noise must not cut
-#    Aria off mid-sentence — `numWords=2` ⇒ the caller must say 2+ words before she
-#    stops; `voiceSeconds=0.25` ⇒ ~250ms of voice to confirm it isn't noise;
-#    `backoffSeconds=0.8` ⇒ pause before resuming after a real interruption
-#    (tuned toward a snappier, industry-standard barge-in; numWords stays at 2 —
-#    going to 1 would need STT backchannel filtering first).
-#  startSpeakingPlan.waitSeconds: how long to wait after the caller stops before Aria
-#    replies — lowered to 0.3 to cut the response lag.
-#  _TTS_SPEED: OpenAI-TTS playback rate (1.0 = normal). 1.1 ⇒ slightly faster than
-#    normal — 1.2 was a touch too fast on the live call.
-#    Tunable; Vapi range 0.25–4.0.
-_STOP_SPEAKING_PLAN = {"numWords": 2, "voiceSeconds": 0.25, "backoffSeconds": 0.8}
-_START_SPEAKING_PLAN = {"waitSeconds": 0.3}
-_TTS_SPEED = 1.1
+#    Aria off mid-sentence — `numWords=1` ⇒ a single word from the caller interrupts
+#    her; `voiceSeconds=0.25` ⇒ ~250ms of voice to confirm it isn't noise;
+#    `backoffSeconds=0.6` ⇒ pause before resuming after a real interruption
+#    (tuned 2026-06-25 toward a snappier, more sensitive barge-in; numWords=1 makes
+#    her yield fast — brief backchannels like "okay" may now cut her off until STT
+#    backchannel filtering lands).
+#  startSpeakingPlan.waitSeconds=0.2: floor silence wait after the caller stops.
+#    Turn-taking is NOT the latency lever — live 2026-06-25 (call 019efe50) Vapi
+#    performanceMetrics showed endpointingLatency=100ms; the ~5s reply gap was
+#    modelLatency ~2.6s (gpt-4o) + voiceLatency ~2.1s (OpenAI TTS). Fix applied (§9):
+#    LLM_MODEL→gpt-4o-mini + TTS→Deepgram Aura, both far lower latency. The Deepgram
+#    voice reuses the key already connected for the transcriber (no extra provider key).
+_STOP_SPEAKING_PLAN = {"numWords": 1, "voiceSeconds": 0.25, "backoffSeconds": 0.6}
+_START_SPEAKING_PLAN = {"waitSeconds": 0.2}
 
 
 # ===========================================================================
@@ -362,7 +363,7 @@ class VapiVoiceProvider:
                 ],
                 "tools": _tool_schemas(tool_server_url, tool_server_secret),
             },
-            "voice": {"provider": TTS_PROVIDER, "voiceId": TTS_VOICE_ID, "speed": _TTS_SPEED},
+            "voice": {"provider": TTS_PROVIDER, "voiceId": TTS_VOICE_ID},
             "transcriber": {
                 "provider": TRANSCRIBER_PROVIDER,
                 "model": TRANSCRIBER_MODEL,

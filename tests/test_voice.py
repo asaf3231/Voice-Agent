@@ -30,26 +30,25 @@ class TestVoice1AssistantConfig:
     def test_wires_llm_model(self, assistant):
         """The pinned LLM_MODEL is the assistant's model id (ENV2 cross-check)."""
         assert assistant["model"]["model"] == LLM_MODEL
-        assert assistant["model"]["model"] == "gpt-4o"
+        assert assistant["model"]["model"] == "gpt-4o-mini"
 
     def test_standard_pipeline_voice_and_transcriber(self, assistant):
-        """Standard pipeline (OQ-VOICE-1 revised): a dedicated TTS voice + transcriber
-        replace realtime speech-to-speech (telephony-robust, non-fragmenting audio)."""
-        assert assistant["voice"]["provider"] == "openai"
+        """Standard pipeline: a dedicated TTS voice + transcriber (telephony-robust).
+        2026-06-25 (Asaf): TTS swapped to Deepgram Aura to cut voice latency (~2.1s on
+        OpenAI TTS, call 019efe50); reuses the Deepgram key already used for STT."""
+        assert assistant["voice"]["provider"] == "deepgram"
         assert assistant["voice"]["voiceId"]
         assert assistant["transcriber"]["provider"] == "deepgram"
 
     def test_turn_taking_configured(self, assistant):
-        """Turn-taking is set so brief backchannels don't fragment the agent's speech
-        (live "fragmented voice" fix 2026-06-24): require >=2 words to interrupt."""
-        assert assistant["stopSpeakingPlan"]["numWords"] >= 2
+        """Turn-taking is configured (stopSpeakingPlan + startSpeakingPlan present).
+        numWords tuned to 1 (2026-06-25, Asaf) for a snappier, more sensitive barge-in."""
+        assert assistant["stopSpeakingPlan"]["numWords"] >= 1
         assert "startSpeakingPlan" in assistant
 
     def test_pacing_tuned_faster(self, assistant):
-        """Pacing tuned from the live review (2026-06-24): faster TTS playback and a
-        shorter post-caller wait so the agent isn't slow/tiring. Tunable knobs."""
-        # Faster speech: OpenAI-TTS speed bumped above 1.0.
-        assert assistant["voice"]["speed"] > 1.0
+        """Pacing: a short post-caller wait so the agent replies promptly. (The OpenAI-TTS
+        `speed` knob was dropped 2026-06-25 — Deepgram Aura has no top-level speed field.)"""
         # Snappier reply: shorter wait after the caller stops talking.
         assert assistant["startSpeakingPlan"]["waitSeconds"] <= 0.5
 

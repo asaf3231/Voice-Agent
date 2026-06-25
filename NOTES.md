@@ -850,3 +850,45 @@ cost_usd: 0.1482, timestamp}` — **cost $0.1482 verified from Vapi == the docum
 true all-time debug spend ≈ **$1.93** (6 pre-switch calls $1.7245 + the $0.1482 booking + the latest $0.058) — every call
 ≤ the $1/call ceiling, all ≪ $50. Decide on the day which figure to show (recommend: the captured receipt(s) + the ledger
 snapshot). **Updated next-action:** PM can now capture every demo receipt itself; only the *recorded demo* still needs Asaf.
+
+### 2026-06-25 — Live-call tuning day: reverted the ElevenLabs/value-prop batch, then tuned persona + latency on real calls  *(Asaf-directed; PM-built + live-verified)*
+**Context:** a fresh PM session. Asaf first **rejected the prior PM's uncommitted ElevenLabs voice-swap + value-prop batch**
+("retrieve it to the situation before he did his work — the system worked good before"). Reverted the 7 batch files to HEAD
+`f79deb3` (backup kept at `/Users/asaframati/alta-rejected-voice-swap-2026-06-25.patch`, recoverable via `git apply`);
+NOTES/`value_prop.md`/§9 TTS constants all restored to the working **OpenAI-TTS `shimmer`** stack; suite back to 543 green.
+Then Asaf iterated live and directed a series of tuning changes, each made + verified in turn:
+1. **Barge-in (vapi_client `_STOP_SPEAKING_PLAN`):** `numWords` 2→1, `backoffSeconds` 0.8→0.6 — a single word now interrupts
+   Aria and she resumes faster (more responsive; brief backchannels may cut her until STT backchannel filtering lands).
+2. **Objection persistence (persona, Policy 4/6 graded):** Aria no longer folds on the first brush-off ("we're fine", "no
+   challenge", "not interested") — she acknowledges, gives the ONE most-relevant value-prop, and re-asks, up to TWO gentle
+   attempts, then HONORS a firm/repeated no (compliance intact). **Live-validated:** calls `019efe43`/`019efe3c`/`019efe63`
+   — prospects opened with "we're not facing any challenge"; Aria reframed and on `019efe63` **booked the meeting**.
+3. **Warm tool-running filler (persona):** banned the flat "give me a moment"/"one moment"/"hold on a sec"/"just a sec"
+   (call `019efe63` said "Give me a moment" after `book_meeting`); replaced with warm lines ("Amazing, let me lock that in
+   for you right now!"). *Offline-verified; pending live confirm.*
+4. **Warm, non-abrupt ending (persona):** previously she fired `endCall` the instant she finished the outcome line, cutting
+   the prospect off (`019efe63`: user said "Okay. Bye." AFTER the hangup). Now she gives a warm sign-off that invites a reply
+   ("Anything else before you go?") and waits a beat before ending. *Offline-verified; pending live confirm.*
+5. **⭐ Latency fix (§9 graded constants — the big one):** Asaf: "too long for her to answer." Diagnosed from Vapi
+   `artifact.performanceMetrics` (NOT a guess): on call `019efe50` the ~5.0s reply gap = **modelLatency ~2.6s (gpt-4o) +
+   voiceLatency ~2.1s (OpenAI TTS)**; **endpointingLatency was only 100ms** — so turn-taking/endpointing was NOT the cause
+   (an earlier `transcriptionEndpointingPlan` tweak was reverted as a no-op). Asaf chose "both model + voice." Fix:
+   `LLM_MODEL` gpt-4o→**gpt-4o-mini**; `TTS_PROVIDER` openai→**deepgram** (Aura), `TTS_VOICE_ID` shimmer→**asteria**; dropped
+   the OpenAI-TTS top-level `speed` knob (Deepgram has none). **Deepgram Aura reuses the Deepgram key already connected for
+   STT — no new provider key.** **Live-validated:** call `019efe63` avg `turnLatency` **1720ms** (model 559 / voice 304 /
+   endpoint 100) — down from **5040ms**, and it booked.
+6. **ENV2-class live reconciliation:** the Deepgram voiceId must be the **bare** name (`asteria`), NOT the model id
+   `aura-asteria-en` — Vapi 400'd and named the valid list (same reconcile-on-first-call pattern as `REALTIME_MODEL`). The
+   400 did **not** burn a live-call slot (place_call failed before `record_cost`).
+**Graded contracts touched (Asaf-authorized live, incl. the "both model+voice" decision):** §9 `LLM_MODEL`/`TTS_PROVIDER`/
+`TTS_VOICE_ID`; `persona.py` (Policy 4/6 objection/ending); `vapi_client` VOICE1 payload (barge-in/voice/model). **Untouched:**
+the byte-exact graded literals `DISCLOSURE_LINE`/`FAILSAFE_HANGUP_LINE`; the `VoiceProvider`/`CalendarProvider` interface
+signatures; `AGENT_TOOLS`. Both persona variants stay swappable (reversible).
+**PM verification (run, not assumed):** full suite **543 passed / 1 skipped / 1 xfailed**; ENV4 import-safe across all
+modules from an empty cwd; `make eval` unchanged (the persona prompt edits don't touch the offline FSM/bake-off, so A book
+0.4 / B 0.2, compliance 1.0 — no graded-number drift). Latency + persistence + booking **live-validated**; warm filler +
+warm ending **offline-verified, pending live confirm** (made after the last live call).
+**Process note (honest):** the corrected post-Stage-4 **independent /code-review gate was not separately run** this session —
+the high-risk pieces (model/voice/persistence) were **live-validated end-to-end on real calls**, and Asaf directed the commit
++ close-out. A future formal review of the persona/§9 diff is cheap if desired. **Spend:** ledger $0.81 / $50, live 2/6 — all
+≪ caps. Backup of the rejected ElevenLabs batch retained at the path above until Asaf deletes it.

@@ -50,11 +50,11 @@ class TestEnv2PinnedDeps:
             assert pkg in content, f"'{pkg}' not found in requirements.txt"
 
     def test_llm_model_constant(self):
-        """LLM_MODEL is the conversational chat model (OQ-VOICE-1 revised 2026-06-24:
-        standard pipeline replaced realtime speech-to-speech; ENV2)."""
+        """LLM_MODEL is the conversational chat model. 2026-06-25 (Asaf): gpt-4o→gpt-4o-mini
+        to cut live reply latency (gpt-4o modelLatency was ~2.6s on call 019efe50; ENV2)."""
         from app.config import LLM_MODEL
-        assert LLM_MODEL == "gpt-4o", (
-            f"LLM_MODEL is '{LLM_MODEL}', expected 'gpt-4o'"
+        assert LLM_MODEL == "gpt-4o-mini", (
+            f"LLM_MODEL is '{LLM_MODEL}', expected 'gpt-4o-mini'"
         )
 
     def test_every_third_party_import_is_pinned(self):

@@ -116,7 +116,7 @@ pytest               # ⚠ pin exact — the offline deterministic suite
 | Concern | Choice | Where the secret lives |
 |---|---|---|
 | Voice platform (telephony, turn-taking, recording, cost) | **Vapi** (`VOICE_PROVIDER`), Retell-swappable behind the adapter | `VAPI_API_KEY` (env) |
-| Conversational brain | **standard pipeline** (OQ-VOICE-1 revised 2026-06-24): chat LLM (`LLM_MODEL`=gpt-4o) + TTS (`TTS_PROVIDER`/`TTS_VOICE_ID`) + transcriber (`TRANSCRIBER_*`) — realtime speech-to-speech fragmented over telephony | `OPENAI_API_KEY` (platform/env) |
+| Conversational brain | **standard pipeline** (OQ-VOICE-1 revised 2026-06-24): chat LLM (`LLM_MODEL`=gpt-4o-mini) + TTS (`TTS_PROVIDER`=deepgram Aura/`TTS_VOICE_ID`) + transcriber (`TRANSCRIBER_*`) — model+voice latency-tuned 2026-06-25 (gpt-4o→mini, openai/shimmer→Deepgram Aura) | `OPENAI_API_KEY` (LLM) + **Deepgram key** (TTS+STT, already connected) (platform/env) |
 | Webhook authenticity | Vapi signing secret | `VAPI_WEBHOOK_SECRET` (env) — verified on every inbound webhook |
 | Booking | Calendar backend (Stage 6, sandbox default) | calendar OAuth token (env) |
 
@@ -393,9 +393,9 @@ BOOKING_LOOKAHEAD_DAYS = 10
 # --- providers / models / determinism ---
 # OQ-VOICE-1 REVISED 2026-06-24 (Asaf): moved off OpenAI realtime speech-to-speech
 # (fragmented/paused over telephony) → Vapi standard pipeline: chat LLM + TTS + STT.
-LLM_MODEL              = "gpt-4o"                     # conversational chat model
-TTS_PROVIDER           = "openai"                     # OpenAI TTS (uses the existing OpenAI key)
-TTS_VOICE_ID           = "shimmer"                    # OpenAI TTS voice (alloy/echo/fable/onyx/nova/shimmer)
+LLM_MODEL              = "gpt-4o-mini"                # conversational chat model (2026-06-25 Asaf: gpt-4o→mini to cut reply latency; gpt-4o modelLatency was ~2.6s live)
+TTS_PROVIDER           = "deepgram"                   # Deepgram Aura TTS (2026-06-25 Asaf: openai/shimmer→Aura to cut voice latency ~2.1s; reuses the STT Deepgram key — no extra provider key)
+TTS_VOICE_ID           = "asteria"                    # Deepgram Aura "Asteria" — natural conversational female voice (Vapi voiceId = bare name, not aura-…-en)
 TRANSCRIBER_PROVIDER   = "deepgram"
 TRANSCRIBER_MODEL      = "nova-2"
 VOICE_PROVIDER         = "vapi"                       # managed; Retell-swappable behind the adapter
