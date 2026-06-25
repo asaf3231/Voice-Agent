@@ -835,3 +835,18 @@ chosen scope.
 **Owed (human-coordinated — PM cannot):** (a) the recorded demo — decide fresh-live vs the kept `019ef8f2…` recording;
 (b) `make receipts CALL_IDS="…"` for the demo call(s) with the real `.env` (PM has no `.env`); (c) reconcile real
 cumulative spend for the on-camera "$X of $50" figure. The work is **uncommitted** (commit on Asaf's word).
+
+### 2026-06-25 — CORRECTION: `.env` IS present — PM can run the read-only evidence commands  *(Asaf flagged my error)*
+**My earlier claim "`.env` absent → PM cannot run receipts" was WRONG.** `.env` exists at the repo root (984 bytes, dated
+Jun 24 17:23 — it predated my check). The false negative came from a multi-part `&&` shell command where an earlier `grep`
+found no matches and returned exit 1, breaking the chain so the `.env` test misreported. **Lesson: verify file existence in
+an isolated command, not buried in an `&&` chain.** Consequence: the PM **can** run the read-only live tools (`make
+preflight`/`receipts`/`inspect`/`score` — GET only, no call placed, no spend).
+**Done this session (read-only, real `.env`):** `make preflight` → **PASSED** (5 keys present; allowlist 1 number; ledger
+$0.06/$50, live 1/6). **`make receipts CALL_IDS="019ef8f2-…"`** → captured `receipts/019ef8f2-…json` = `{call_id,
+cost_usd: 0.1482, timestamp}` — **cost $0.1482 verified from Vapi == the documented figure**; receipt is redacted
+(no phone/secret/PAN — swept clean) and is the **trackable** class (`.gitignore` ignores only `receipts/raw/` + the ledger).
+**Spend reconciliation (for the on-camera "$X of $50"):** persistent ledger cumulative = **$0.06** (post-reset, 1 live call);
+true all-time debug spend ≈ **$1.93** (6 pre-switch calls $1.7245 + the $0.1482 booking + the latest $0.058) — every call
+≤ the $1/call ceiling, all ≪ $50. Decide on the day which figure to show (recommend: the captured receipt(s) + the ledger
+snapshot). **Updated next-action:** PM can now capture every demo receipt itself; only the *recorded demo* still needs Asaf.

@@ -805,3 +805,39 @@ on Asaf's word; **(4) record** per the storyboard. Optional/owed: full PLAN-foot
 387–419 green); the open STANDING-RULE items (Bug-1 slot re-offer; lead_id/lead_tz) if Asaf wants them before recording.
 Watch out for / open: receipts capture + the recorded demo are PM-un-runnable (no `.env`); don't overstate compliance on
 camera (recording-on is one-party-consent scope); commit only on Asaf's word.
+
+## 2026-06-25 11:25 — [VOICE] NOTE (committed; appended post-SESSION-END for ledger accuracy)
+Asaf said **"commit."** The Stage-9 toolchain + storyboard is **committed `ca381fb` on `main`** (above `abae4dd`;
+7 files, +248/−18). Working tree clean. **Not pushed** — HEAD is now 1 ahead of `origin/main`; awaiting Asaf's word to
+push. Remaining Stage-9 items unchanged (human-coordinated): the recorded demo + `make receipts` with the real `.env`.
+
+## 2026-06-25 11:35 — [VOICE] NOTE (CORRECTION: `.env` present — PM can capture receipts; demo receipt captured)
+**Asaf caught my error:** I'd said "`.env` absent → PM cannot run receipts." **Wrong** — `.env` exists (984 bytes, Jun 24
+17:23, predated my check). The false negative was a multi-part `&&` shell command where a no-match `grep` (exit 1) broke
+the chain. **`make preflight` → PASSED** (5 keys present; allowlist 1; ledger $0.06/$50, live 1/6). **Captured the demo
+receipt:** `make receipts CALL_IDS="019ef8f2-…"` → `receipts/019ef8f2-…json` (`cost_usd 0.1482`, redacted — no phone/secret;
+swept clean; trackable class). **Cost $0.1482 verified == source.** Real all-time debug spend ≈ $1.93 (≪ $50); ledger
+shows $0.06 post-reset. **Updated handoff:** the PM CAN now run the read-only live tools (preflight/receipts/inspect/score);
+only the *recorded demo* still needs Asaf. New uncommitted: the NOTES correction + the captured receipt (redacted, trackable).
+
+## 2026-06-25 11:40 — [VOICE] SESSION START
+Picking up: **Stage 9 — video** is the focus (Asaf: "we are going to work on the video"). Status as read from the
+ledger: Stages 0–7 ✅; Stage 8 build-half ✅ + **LIVE1/LIVE2 met** (real booking, call `019ef8f2…`, cost $0.1482);
+Stage 8.5 offline+MOCK ✅ (`8bef263`); **Stage 9 in progress** — `make eval`/`make receipts` toolchain + reconciled
+storyboard committed `ca381fb`; demo receipt captured. Read order completed this session: `PM_Methodology_Prompt.md`
+(verbatim) → full `PM_LOG.md` (through the 11:35 NOTE) → `CLAUDE.md` (in context) → `PLAN.md` → `QA_checklist.md` →
+`NOTES.md` (full) → `ORCHESTRATION.md`.
+**Resume state (verified vs disk via git, NOT just the ledger — no crash gap this time):** working tree clean except
+`M NOTES.md M PM_LOG.md ?? receipts/` — exactly the 11:35 NOTE's uncommitted set (the NOTES correction + the redacted
+demo receipt `receipts/019ef8f2-…json`, `cost_usd 0.1482`). HEAD `ca381fb`; **1 commit ahead of `origin/main`** (not
+pushed — matches the 11:25 NOTE). `receipts/` holds the persistent ledger (`.budget_ledger.json`) + the captured receipt.
+State as read (to RE-VERIFY by running before I report any number): suite last claimed **543 passed / 1 skipped / 1
+xfailed** (`ca381fb`/`abae4dd` — NOT re-run by me yet); `make eval` deterministic A (Consultative) book 0.4 / B (Direct)
+0.2, disclosure 0.8 / objection 1.0 / compliance 1.0 both, avg_turns 3.4/2.6, 5 personas; persistent ledger $0.06/$50,
+live 1/6; real all-time debug spend ≈ $1.93 ≪ $50; demo recording kept at `storage.vapi.ai/019ef8f2-…-mono.wav`.
+**CLAUDE.md is current** (pipeline revision + AGENT_TOOLS=4); **⚠ PLAN.md footer still partly stale** (cites Realtime /
+387–419 green) — a reconciliation pass is owed.
+Plan for this session: **stop and await Asaf's specific direction on the video** (per his instruction). Honor his
+working style (concise; fix only what he names; don't re-raise dropped items e.g. "Ulta"/lead-tz unless asked). Will
+re-verify any number against its source before reporting; will NOT place live calls autonomously. SESSION END / HANDOFF
+before stopping.

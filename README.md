@@ -1,7 +1,8 @@
 # Alta Outbound Voice Agent ("Aria")
 
 An AI-driven, English-speaking outbound calling agent that pitches Alta's value proposition and books
-meetings for the sales team. Built on Vapi (managed voice platform) + OpenAI Realtime.
+meetings for the sales team. Built on Vapi (managed voice platform) with a modular speech pipeline:
+Deepgram STT + GPT-4o + OpenAI TTS (Shimmer).
 
 ---
 
@@ -44,11 +45,11 @@ make call TO=+15551234567   # consented, allowlisted number only
 synthetic lead list (data/leads.synthetic.json)
   → app/consent.py      — allowlist gate (single chokepoint, CON1)
   → app/budget.py       — hard cap guard (CALL4/SEC3)
-  → app/vapi_client.py  — VoiceProvider adapter (Vapi + OpenAI Realtime)
+  → app/vapi_client.py  — VoiceProvider adapter (Vapi: Deepgram STT + GPT-4o + OpenAI TTS)
       → DISCLOSURE_LINE spoken verbatim first (static first-message, CON2)
       → pitch / discovery / objection handling  (app/persona.py)
       → check_availability / book_meeting        (app/tools.py)
-      → end_call or FAILSAFE_HANGUP_LINE         (CONV6)
+      → native Vapi end-call / FAILSAFE_HANGUP_LINE (CONV6)
   → app/orchestrate.py  — campaign runner
   → app/server.py       — FastAPI webhook handler (tool calls + call status)
   → app/eval/           — offline deterministic evaluation harness
