@@ -707,3 +707,36 @@ class TestEnv4EvalImportSafety:
         assert opening_pos < doc.index("PITCH") if "PITCH" in doc else True, (
             "Stage docstring should mention OPENING before PITCH (corrected in Stage-6)"
         )
+
+
+# ---------------------------------------------------------------------------
+# `python -m app.eval` — the report command shown in the demo video
+# ---------------------------------------------------------------------------
+
+class TestEvalReportCommand:
+    """`make eval` / `python -m app.eval` prints the computed, deterministic numbers."""
+
+    def test_main_runs_and_emits_both_variants(self, capsys):
+        """main() returns 0 and prints both persona variants with their book rates."""
+        from app.eval.__main__ import main
+
+        rc = main([])
+        out = capsys.readouterr().out
+
+        assert rc == 0
+        # Both the bake-off and the eval-summary headers are present.
+        assert "A/B BAKE-OFF" in out
+        assert "OFFLINE EVAL SUMMARY" in out
+        # Both variants appear, with the locked-A 2x book advantage visible.
+        assert "Consultative / discovery-led" in out
+        assert "Direct / value-first" in out
+
+    def test_main_output_is_deterministic(self, capsys):
+        """Same seed ⇒ byte-identical report across runs (EVAL1 cross-check)."""
+        from app.eval.__main__ import main
+
+        main([])
+        first = capsys.readouterr().out
+        main([])
+        second = capsys.readouterr().out
+        assert first == second

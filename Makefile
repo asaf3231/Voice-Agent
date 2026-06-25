@@ -8,7 +8,7 @@ PIP    := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
 UVICORN := $(VENV)/bin/uvicorn
 
-.PHONY: install test serve call preflight inspect score
+.PHONY: install test serve call preflight inspect score eval receipts
 
 ## install — create .venv and install all pinned deps
 install:
@@ -68,3 +68,20 @@ endif
 ## Usage: make score CALL_ID=019ef90c-...   (or just: make score)
 score:
 	$(VENV)/bin/python scripts/score_call.py $(CALL_ID)
+
+## eval — print the offline eval summary + A/B bake-off (the numbers shown in the video)
+## Deterministic, seeded, network-free; no .env, no call. The VID2 evidence command.
+eval:
+	$(VENV)/bin/python -m app.eval
+
+## receipts — capture redacted per-call cost receipts → receipts/<call_id>.json
+## Read-only GET against the voice platform; needs VAPI_API_KEY in .env. The $50 proof.
+## Usage: make receipts CALL_IDS="019ef8f2-... 019ef883-..."
+receipts:
+ifndef CALL_IDS
+	@echo "ERROR: 'make receipts' requires one or more Vapi call ids."
+	@echo "Usage: make receipts CALL_IDS=\"019ef8f2-... 019ef883-...\""
+	@exit 1
+else
+	$(VENV)/bin/python scripts/capture_receipts.py $(CALL_IDS)
+endif

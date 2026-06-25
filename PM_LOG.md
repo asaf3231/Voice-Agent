@@ -746,3 +746,62 @@ config.py/rubric.py/CLAUDE.md/NOTES.md and can't be split without interactive ad
 explicit go). Working tree then clean. Verified: **523 passed / 1 skipped / 1 xfailed**; ENV4 import-safe.
 **Still open (unchanged):** live stress execution is human-coordinated (PM will NOT auto-place calls) and gated on
 the **recording-notice compliance** check for any added consented number. Not pushed (local only).
+
+## 2026-06-25 10:47 — [VOICE] SESSION START
+Picking up: **Stage 8 / 8.5 live + Stage 9 video** are the only non-✅ work (Stages 0–7 ✅; Stage 8 build-half ✅ +
+LIVE1/LIVE2 met on a real call per NOTES; Stage 8.5 offline+MOCK ✅ committed). Read order completed this session:
+`PM_Methodology_Prompt.md` (verbatim) → full `PM_LOG.md` (through the 15:30 NOTE) → `CLAUDE.md` (in context) →
+`PLAN.md` → `QA_checklist.md` → `NOTES.md` (tail incl. all 2026-06-24 live-debug + STANDING-RULE/Bug entries) →
+`ORCHESTRATION.md`.
+**Resume anomaly (verified vs disk via git, NOT the ledger):** unlike prior resumes, the **working tree is CLEAN** —
+no uncommitted batch. But **3 commits landed AFTER the last PM_LOG entry (`8bef263`) with no SESSION END / NOTES
+session entry** (the recurring "ran, never closed" pattern, this time committed): `a7796b3` (docs: mark Stage-8.5
+reviewer gate + 8bef263), `51eb69a` (**feat: live-call refinements — prefetch availability → instant slot proposal,
+booking read-back + "invite by email", barge-in tuning `stopSpeakingPlan{numWords:2,voiceSeconds:0.25,backoffSeconds:0.8}`;
+folds in cost-trusted-only-after-call-ends, AGENT_TOOLS=4 [end_call retired → native Vapi end-call + END_CALL_MESSAGE],
+qualify kept as internal pitch-tailoring oracle**), `abae4dd` (docs: de-jargon all module/function docstrings; claims
+suite **541 passed / 1 skipped / 1 xfailed**, comments-only). Also new off-log: repo is now **pushed to a GitHub remote**
+`asaf3231/Voice-Agent` (HEAD == origin/main) — prior entries said "local only."
+State as read (to RE-VERIFY by running, not trust the ledger): offline suite green count (abae4dd claims 541/1skip/1xfail —
+NOT yet re-run by me); ENV4 import-safe across all modules incl. `app.testing.mock_bridge` + the scripts; both graded
+literals byte-exact == config (esp. the NEW `DISCLOSURE_LINE` with the recording notice dropped); AGENT_TOOLS=4 dispatch
+identity. **CLAUDE.md is current** through the pipeline revision + AGENT_TOOLS=4. **⚠ PLAN.md is STALE** — the tracker
+table still shows Stage 8 "⬜ Not started" and the footer still cites OpenAI-Realtime brain / `REALTIME_MODEL` / 387–419
+green; it does NOT reflect the standard-TTS pipeline switch, LIVE1/LIVE2 being met, or the 3 latest commits. PLAN needs a
+reconciliation pass for ledger accuracy.
+Plan for this session: honor Asaf's style (concise; fix only what he names; don't re-raise dropped items e.g. "Ulta"/the
+lead-tz polish unless he asks). Awaiting Asaf's direction. Likely candidates, in order of cheapness/value: (a) reconcile
+the stale PLAN.md + back-fill a NOTES/PM_LOG entry for the 3 unlogged commits (ledger accuracy, no code risk); (b) the
+open STANDING-RULE live items if Asaf wants them (Bug-1 slot re-offer loop live test; lead_id/lead_tz at the webhook
+chokepoint); (c) Stage 9 video per `docs/STAGE9_STORYBOARD.md`. Will re-verify the suite count before reporting any number,
+and will NOT place live calls autonomously. Write SESSION END / HANDOFF before stopping.
+
+## 2026-06-25 11:20 — [VOICE] SESSION END / HANDOFF (Stage 9 video prep — eval toolchain + storyboard; HALT for Asaf's record/receipts step)
+**Asaf chose focus = Stage 9 (the video).** Did the in-lane Stage-9 PM work; the recorded demo + receipts capture are
+human-coordinated (need Asaf's `.env`), so I halt there.
+Did (additive, read-only — **no graded contract touched**, no reviewer gate needed, like Stage-6 pure-eval):
+- **`python -m app.eval` / `make eval`** (`app/eval/__main__.py`) — prints the computed A/B bake-off + persona-matrix
+  summary the video shows (`VID2`). Deterministic, seeded, network-free, no `.env`.
+- **`make receipts CALL_IDS="…"`** Makefile target — wires the existing `capture_receipts.py` (its own docstring already
+  told users to run `make receipts`, but the target didn't exist). Read-only GET; needs the real `.env`.
+- `tests/test_eval.py::TestEvalReportCommand` (+2: returns-0/both-variants + byte-identical-across-runs).
+- **`docs/STAGE9_STORYBOARD.md` rewritten** to the REAL stack (standard TTS pipeline gpt-4o+shimmer+deepgram, **not**
+  Realtime), verified numbers baked in, real commands, a command cheat-sheet, an honest receipts plan, and the
+  live-vs-recorded fallback (kept call `019ef8f2…`).
+- Ledger: PLAN Stage 8 row (was wrongly "⬜ Not started" — now reflects LIVE1/LIVE2 met) + Stage 9 row/section updated;
+  NOTES handback appended.
+Verified numbers (PM-run, not assumed): suite **543 passed / 1 skipped / 1 xfailed** (from 541; +2). `make eval`
+deterministic and **== the Stage-6 ledger**: A (Consultative) book **0.4** / B (Direct) **0.2** (A 2×); disclosure 0.8,
+objection 1.0, compliance 1.0 both; avg_turns 3.4/2.6; 5 personas. ENV4 re-proven from an empty cwd.
+Status now: 🔄 **Stage 9 in progress (PM-verified).** Toolchain + storyboard ready; **work UNCOMMITTED on disk** (commit on
+Asaf's word). The recorded demo + receipts capture are the remaining `VID1`/`VID2` items — human-coordinated.
+**Resume context (verified vs disk):** 3 commits (`a7796b3`/`51eb69a`/`abae4dd`) landed after `8bef263` with no prior
+SESSION END (recurring pattern) — now back-filled in NOTES. Repo pushed to GitHub `asaf3231/Voice-Agent` (HEAD==origin/main).
+Ledger reads `$0.058 / live_call_count=1` — a fresh off-log call; real debug spend ≈ $1.78, all ≪ $50.
+Next PM / Asaf should: **(1) decide the demo call** — fresh live on camera vs the kept `019ef8f2…` recording (recommend:
+kept recording as the safe spine, fresh take only as an upgrade); **(2) run `make receipts CALL_IDS="019ef8f2-…"`** (+ any
+other demo calls) with the real `.env` → PM reconciles the on-camera "$X of $50"; **(3) commit** the Stage-9 toolchain+docs
+on Asaf's word; **(4) record** per the storyboard. Optional/owed: full PLAN-footer reconciliation (still cites Realtime /
+387–419 green); the open STANDING-RULE items (Bug-1 slot re-offer; lead_id/lead_tz) if Asaf wants them before recording.
+Watch out for / open: receipts capture + the recorded demo are PM-un-runnable (no `.env`); don't overstate compliance on
+camera (recording-on is one-party-consent scope); commit only on Asaf's word.

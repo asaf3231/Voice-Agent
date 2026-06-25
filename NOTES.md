@@ -803,3 +803,35 @@ not pulled; `MAX_LIVE_STRESS_CALLS == 50`. The cross-process budget TOCTOU is no
 **Owed / next:** independent review of the graded change → commit (on Asaf's word; tree currently also carries a prior
 uncommitted qualify/disclosure batch — keep the two separable); then the human-coordinated live stress run after the
 recording-notice gate clears. The LangGraph fan-out runner + a real RTP/softphone bridge are deliberately out of scope.
+
+### 2026-06-25 — Stage 9 video prep: eval-report toolchain + storyboard reconciliation  *(PM-built + verified)*
+**Context (new PM session; Asaf chose focus = "Stage 9 — the video").** On resume the working tree was CLEAN but 3
+commits had landed after the last log entry (`8bef263`) with no SESSION END: `a7796b3` (ledger doc), `51eb69a`
+(live-call refinements — prefetch slots/instant proposal, booking read-back, barge-in tuning, AGENT_TOOLS=4/end_call
+retired, qualify-as-oracle), `abae4dd` (docstring de-jargon, 541 green). Repo is also now pushed to GitHub
+(`asaf3231/Voice-Agent`).
+**Gaps found for the video:** (1) the storyboard was **stale** — said "OpenAI Realtime brain" / "Vapi+Realtime", but the
+stack is the **standard TTS pipeline** (gpt-4o + OpenAI-TTS shimmer + Deepgram nova-2; OQ-VOICE-1 revised 2026-06-24);
+(2) **no command** produced the eval summary the video shows — `harness`/`bakeoff` had the functions but no CLI entry
+point; (3) **no `make receipts` target** despite `scripts/capture_receipts.py`'s own docstring telling you to run it;
+(4) `receipts/` holds only the ledger — **no per-call receipts captured**, and the ledger reads `$0.058 / live_call_count=1`
+(a fresh off-log call; real debugging spend ≈ $1.78, all ≤ the $1/call ceiling, ≪ $50).
+**Built (PM, additive, read-only — NO graded contract touched, so no reviewer gate; like Stage 6 pure-eval):**
+- `app/eval/__main__.py` → `python -m app.eval` / **`make eval`** prints the computed A/B bake-off + persona-matrix
+  summary. Deterministic, seeded, network-free, no `.env`. Import-safe (`__main__` not run on `import app.eval`).
+- **`make receipts CALL_IDS="…"`** Makefile target wiring the existing `capture_receipts.py` (closes the docstring↔Makefile
+  gap). Read-only GET; needs the real `.env`.
+- `tests/test_eval.py::TestEvalReportCommand` (+2): `main()` returns 0 + emits both variants; output byte-identical across
+  runs (EVAL1 cross-check).
+- `docs/STAGE9_STORYBOARD.md` **rewritten** to the real stack + verified numbers + the real commands + an honest receipts
+  plan + the live-vs-recorded fallback (kept call `019ef8f2…`) + a command cheat-sheet. Honest compliance note kept
+  (recording-on / one-party-consent / notice-to-restore).
+**Verified numbers (PM-run, not assumed):** full suite **543 passed / 1 skipped / 1 xfailed** (from 541; +2 report tests);
+`make eval` deterministic and **matches the Stage-6 ledger exactly** — A (Consultative) book **0.4** / B (Direct) book
+**0.2** (A books 2×); disclosure 0.8, objection_handled 1.0, compliance 1.0 both; avg_turns A 3.4 / B 2.6; 5 personas.
+ENV4 re-proven (all app modules import from an empty cwd, no `.env`). PLAN Stage 8/9 rows updated; the broader PLAN
+**footer is still stale** (cites Realtime / 387–419 green) — a reconciliation pass is owed but was out of this session's
+chosen scope.
+**Owed (human-coordinated — PM cannot):** (a) the recorded demo — decide fresh-live vs the kept `019ef8f2…` recording;
+(b) `make receipts CALL_IDS="…"` for the demo call(s) with the real `.env` (PM has no `.env`); (c) reconcile real
+cumulative spend for the on-camera "$X of $50" figure. The work is **uncommitted** (commit on Asaf's word).

@@ -46,9 +46,9 @@ Status values: ⬜ Not started · 🔄 In progress · 🟡 Awaiting verification
 | 5 | Outbound orchestration + consent + budget guard | `CALL1`–`CALL4`, `CON1`, `CON4`, `CON5`, `SEC3` | ✅ | ✅ Complete (2026-06-23, 287 green; **independent** reviewer gate → APPROVE) |
 | 6 | Offline evaluation harness | `EVAL1`–`EVAL6` | — | ✅ Complete (2026-06-23, 335 green; A/B re-run flipped winner **B→A**, persona-lock awaiting Asaf) |
 | 7 | Anti-leakage & packaging hardening | `LEAK1`–`LEAK5`, `PKG1`–`PKG4` | ✅ | ✅ Complete (2026-06-23, 387 green; indep. security gate: 2 MED fixed; 1 HIGH → Stage-8 blocker) |
-| 8 | Live calling (lean) + receipts | `LIVE1`–`LIVE4`, `SEC5` | — | ⬜ Not started |
+| 8 | Live calling (lean) + receipts | `LIVE1`–`LIVE4`, `SEC5` | — | 🔄 Build-half ✅; **LIVE1/LIVE2 met** (real booking, call `019ef8f2…`); receipts capture + cost reconciliation owed |
 | 8.5 | Adversarial / load hardening (100+ tester fleet) | `STR-L*`/`STR-T*`/`STR-P*`/`STR-C*`/`STR-LIVE` (§12) | ✅ | 🔄 Offline+MOCK ✅ (PM-verified); live lane scaffolded, gated |
-| 9 | Video explanation + demo script | `VID1`–`VID3` | — | ⬜ Not started |
+| 9 | Video explanation + demo script | `VID1`–`VID3` | — | 🔄 Storyboard reconciled + `make eval`/`make receipts` toolchain landed; awaiting recorded demo + receipts capture |
 
 **Reviewer-gate trigger (this project):** on any stage that touches a graded contract — a §9 named
 constant, a tool/provider/calendar **interface signature**, the `DISCLOSURE_LINE` /
@@ -300,7 +300,17 @@ meeting, the offline eval summary, and the receipts proving spend ≤ $50.
 - [ ] `VID1` — covers architecture → governance (budget/consent/disclosure) → a demo call booking a meeting (**live preferred; a pre-recorded successful real call is an acceptable fallback** if same-day live fails — Red-Team 2026-06-23, Finding 7).
 - [ ] `VID2` — shows the offline eval summary and the receipts (spend ≤ $50).
 - [ ] `VID3` — within length; every number shown matches its source.
-**Status:** ⬜ Not started · **Reviewer gate:** — (PM/Asaf review).
+**Status:** 🔄 In progress (PM-verified 2026-06-25) — `docs/STAGE9_STORYBOARD.md` reconciled to the real
+stack (standard TTS pipeline, not Realtime) with verified numbers baked in; the **VID2 evidence toolchain
+landed**: `python -m app.eval` / **`make eval`** prints the computed eval summary + A/B bake-off
+(deterministic), and **`make receipts CALL_IDS="…"`** captures redacted per-call receipts (the script's
+own docstring referenced a `make receipts` target that didn't exist — now wired). Suite **543 green**
+(+2 report-command tests). **Owed (human-coordinated):** the recorded demo (fresh live or the kept
+`019ef8f2…` recording), and `make receipts` for the demo call(s) with the real `.env` (PM cannot — `.env`
+is Asaf's). · **Reviewer gate:** — (pure reporting/docs; no graded contract touched — PM/Asaf review).
+**Verified eval numbers (2026-06-25, PM-run `make eval`):** A (Consultative) book 0.4 / B (Direct) book
+0.2 — A books 2×; disclosure 0.8, objection_handled 1.0, compliance 1.0 both; avg_turns A 3.4 / B 2.6; 5
+personas.
 
 ---
 
