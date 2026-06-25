@@ -943,7 +943,7 @@ Did (this session continued past the 12:48 revert into Asaf-directed live tuning
 Verified numbers (PM-run): full suite **543 passed / 1 skipped / 1 xfailed**; ENV4 import-safe; `make eval` unchanged (A book
 0.4 / B 0.2, compliance 1.0 — persona prompt edits don't touch the offline FSM/bake-off). Graded literals + interface
 signatures + AGENT_TOOLS untouched. Spend: ledger **$0.81 / $50**, live **2/6** — all ≪ caps.
-Status now: ✅ **Committed `1e6826d` on `main`** (the 6 code/doc files + NOTES + PM_LOG; the two `docs/VIDEO_SCRIPT.*` files
+Status now: ✅ **Committed `f85fc66` on `main`** (the 6 code/doc files + NOTES + PM_LOG; the two `docs/VIDEO_SCRIPT.*` files
 are Asaf's untracked Stage-9 work — deliberately NOT in this commit). Working tree otherwise clean. **Not pushed** (push only
 on Asaf's word; repo origin is GitHub `asaf3231/Voice-Agent`).
 **Process note (honest):** the formal independent `/code-review` gate was **not** separately run — the high-risk pieces
